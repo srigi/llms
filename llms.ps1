@@ -4,7 +4,9 @@ param(
     [Parameter(Position=0)]
     [string]$ModelPattern,
     [Parameter(Position=1)]
-    [int]$CtxSize
+    [int]$CtxSize,
+    [Parameter(ValueFromRemainingArguments)]
+    [string[]]$LlamaServerArgs
 )
 
 $DefaultContextSize = 20000
@@ -113,7 +115,7 @@ if ($PSBoundParameters.ContainsKey('CtxSize')) {
 Write-Host " (context size: $CtxSize)"
 
 # Run llama-server with found model
-llama-server `
+llama-server $LlamaServerArgs `
     --model "$($modelFile.FullName)" `
     --ctx-size "$CtxSize" `
     --n-gpu-layers 99 `
