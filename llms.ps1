@@ -9,8 +9,31 @@ param(
 
 $DefaultContextSize = 20000
 $ModelsDirs = $Env:LLMS_MODELS_DIRS -split ','
+
+function Get-ModelsDirsFromIni {
+    param([string]$filePath)
+
+    if (Test-Path $filePath) {
+        $content = Get-Content $filePath -Raw
+        if ($content -match '^\s*ModelsDirs\s*=\s*([^\r\n]*)') {
+            return ($Matches[1] -split ',') | ForEach-Object { $_.Trim() }
+        }
+    }
+
+    return $null
+}
+
 if (-not $ModelsDirs -or $ModelsDirs.Length -eq 0) {
-    Write-Host "`e[91mError:`e[39m LLMS_MODELS_DIRS environment variable is not set or empty."
+    # try load ModelsDirs from .ini file in the current directory
+    $ModelsDirs = Get-ModelsDirsFromIni $(Join-Path $PSScriptRoot "llms.ini")
+}
+if (-not $ModelsDirs -or $ModelsDirs.Length -eq 0) {
+    # try load ModelsDirs from .ini file in AppData/Local
+    $appDataPath = [Environment]::GetFolderPath("LocalApplicationData")
+    $ModelsDirs = Get-ModelsDirsFromIni $(Join-Path $appDataPath "llms.ini")
+}
+if (-not $ModelsDirs -or $ModelsDirs.Length -eq 0) {
+    Write-Host "`e[91mError:`e[39m `e[95mModelsDirs`e[39m not configured (either by ENV variable `e[94mLLMS_MODELS_DIRS`e[39m, or in `e[94mllms.ini`e[39m file)!`n"
     exit 1
 }
 
