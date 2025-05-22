@@ -114,6 +114,15 @@ if ($PSBoundParameters.ContainsKey('CtxSize')) {
 }
 Write-Host " (context size: $CtxSize)"
 
+# Check for mmproj files
+$mmprojFiles = Get-ChildItem -Path $modelFile.DirectoryName -Filter "$($modelFile.BaseName).mmproj-*.gguf" -File -ErrorAction SilentlyContinue
+if ($mmprojFiles -and $mmprojFiles.Count -gt 0) {
+    $mmprojFile = $mmprojFiles[0]
+    $LlamaServerArgs += "--mmproj", "$($mmprojFile.FullName)"
+    $LlamaServerArgs += "--no-mmproj-offload"
+    Write-Host "Adding companion model: `e[38;5;117m$($mmprojFile.FullName)`e[39m"
+}
+
 # Run llama-server with found model
 llama-server $LlamaServerArgs `
     --model "$($modelFile.FullName)" `

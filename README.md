@@ -5,6 +5,7 @@ A PowerShell wrapper script for `llama-server` that simplifies the process of li
 ## Features
 - Searches for `.gguf` models in multiple configured directories
 - Supports partial model name matching
+- Supports auto-loading of companion `.mmproj-*.gguf` file for multi-modal models
 - Configurable via:
   - Environment variables (`LLMS_MODELS_DIRS`, ...)
   - `.ini` file(s) (`llms.ini` in current directory or `%USERPROFILE%/AppData/Local`)
@@ -80,3 +81,4 @@ llms Llama-3.1-8B-Instruct-Q4 25000 --chat-template llama3
 - The script automatically creates `context.ini` in the model's directory if it doesn't exist
 - Color-coded output for model information in terminal
 - Error handling for missing configurations and models
+- Automatically detects and loads companion `.mmproj-*.gguf` files when present, adding appropriate options to `llama-server`
