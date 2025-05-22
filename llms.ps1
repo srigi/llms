@@ -85,7 +85,7 @@ if (-not $modelFile) {
     exit 1
 }
 $modelName = [System.IO.Path]::GetFileNameWithoutExtension($modelFile.Name)
-Write-Host -NoNewline "Using model: $modelName"
+Write-Host -NoNewline "Using model: `e[38;5;117m$($modelFile.FullName)`e[39m"
 
 # Ensure context.ini exists in the model's directory
 $contextIni = Join-Path $modelFile.DirectoryName "context.ini"
@@ -112,7 +112,7 @@ if ($PSBoundParameters.ContainsKey('CtxSize')) {
         $CtxSize = $DefaultContextSize
     }
 }
-Write-Host " (context size: $CtxSize)"
+Write-Host " (context size: `e[38;5;226m$CtxSize`e[39m)"
 
 # Check for mmproj files
 $mmprojFiles = Get-ChildItem -Path $modelFile.DirectoryName -Filter "$($modelFile.BaseName).mmproj-*.gguf" -File -ErrorAction SilentlyContinue
