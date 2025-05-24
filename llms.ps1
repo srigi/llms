@@ -127,6 +127,9 @@ if ($mmprojFiles -and $mmprojFiles.Count -gt 0) {
 llama-server $LlamaServerArgs `
     --model "$($modelFile.FullName)" `
     --ctx-size "$CtxSize" `
+    --cache-type-k q8_0 `
+    --cache-type-v q8_0 `
+    --flash-attn `
     --n-gpu-layers 99 `
     --threads "$([Environment]::ProcessorCount)" `
     --host "$($Env:LLMS_HOST ?? "127.0.0.1")" `
