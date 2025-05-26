@@ -26,7 +26,7 @@ List all available `.gguf` models in configured directories
 ```powershell
 llms list
 ```
-![PowerShell terminal showcasing `llsm list` command](https://i.postimg.cc/tTYgdjQc/Clipboard01.png)
+![PowerShell terminal showcasing `llsm list` command](https://i.postimg.cc/507VKNvn/Clipboard01-1.png)
 
 
 #### `<partial_model_name>`
@@ -34,7 +34,7 @@ Run a model matching the partial name
 ```powershell
 llms Qwen3-30B-A3B.i1-Q4 25000
 ```
-![PowerShell terminal showcasing `llsm <partial_model_name>` command](https://i.postimg.cc/Bvt3kBYL/Clipboard03.png)
+![PowerShell terminal showcasing `llsm <partial_model_name>` command](https://i.postimg.cc/43sBK6Mh/Clipboard03.png)
 
 
 ## Configuration
