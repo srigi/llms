@@ -9,43 +9,41 @@ param(
     [string[]]$LlamaServerArgs
 )
 
-$DefaultContextSize = 20000
-$ModelsDirs = $Env:LLMS_MODELS_DIRS -split ','
+if (-not $ModelPattern) {
+    $ScriptName = [System.IO.Path]::GetFileNameWithoutExtension($PSCommandPath)
 
-function Get-ModelsDirsFromIni {
-    param([string]$filePath)
+    Write-Host "usage:`n  $ScriptName list`n  $ScriptName <partial_model_name> <context_size> [llama-server args...] [--dry-run]"
+    Write-Host "`nexample:`n  $ScriptName list`n  $ScriptName Devstral-Small-2505-UD 24000`n  $ScriptName Mistral-Small-3.1-24B 32000 --jinja`n  $ScriptName Mistral-Small-3.1-24B 32000 --jinja --dry-run`n"
+    exit 1
+}
 
-    if (Test-Path $filePath) {
-        $content = Get-Content $filePath -Raw
-        if ($content -match '^\s*ModelsDirs\s*=\s*([^\r\n]*)') {
-            return ($Matches[1] -split ',') | ForEach-Object { $_.Trim() }
+$appDataPath = [Environment]::GetFolderPath("LocalApplicationData")
+$iniFile = @(
+    Join-Path $PSScriptRoot 'llms.ini'
+    Join-Path $appDataPath  'llms.ini'
+) | Where-Object { Test-Path $_ } | Select-Object -First 1
+$config = if ($iniFile) {
+    Get-Content $iniFile |
+        Where-Object { $_ -and $_ -notmatch '^\s*[;#]' -and ($_ -split '=',2).Count -eq 2 } |
+        ForEach-Object {
+            $parts = $_ -split '=',2
+            [PSCustomObject]@{
+                Key = $parts[0].Trim()
+                Value = $parts[1].Trim()
+            }
         }
-    }
+} else { @() }
 
-    return $null
+# Get ModelsDirs from ENV or config
+$ModelsDirs = $Env:LLMS_MODELS_DIRS -split ',' | Where-Object { $_ } # drop any empty entries
+if (-not $ModelsDirs -or $ModelsDirs.Count -eq 0) {
+    $ModelsDirs = ($config | Where-Object Key -eq 'ModelsDirs').Value -split ',' | Where-Object { $_ }
 }
-
-if (-not $ModelsDirs -or $ModelsDirs.Length -eq 0) {
-    # try load ModelsDirs from .ini file in the current directory
-    $ModelsDirs = Get-ModelsDirsFromIni $(Join-Path $PSScriptRoot "llms.ini")
-}
-if (-not $ModelsDirs -or $ModelsDirs.Length -eq 0) {
-    # try load ModelsDirs from .ini file in AppData/Local
-    $appDataPath = [Environment]::GetFolderPath("LocalApplicationData")
-    $ModelsDirs = Get-ModelsDirsFromIni $(Join-Path $appDataPath "llms.ini")
-}
-if (-not $ModelsDirs -or $ModelsDirs.Length -eq 0) {
+if (-not $ModelsDirs -or $ModelsDirs.Count -eq 0) {
     Write-Host "`e[91mError:`e[39m `e[95mModelsDirs`e[39m not configured (either by ENV variable `e[94mLLMS_MODELS_DIRS`e[39m, or in `e[94mllms.ini`e[39m file)!`n"
     exit 1
 }
 
-if (-not $ModelPattern) {
-    $ScriptName = [System.IO.Path]::GetFileNameWithoutExtension($PSCommandPath)
-
-    Write-Host "usage:`n  $ScriptName [list | <partial_model_name>]`n  $ScriptName [<partial_model_name>] [<context_size>]"
-    Write-Host "`nexample:`n  $ScriptName list`n  $ScriptName codethink 15000"
-    exit 1
-}
 if ($ModelPattern -eq "list") {
     Write-Host "Searching for .gguf models in:"
     $foundModels = $false
@@ -87,30 +85,10 @@ if (-not $modelFile) {
 $modelName = [System.IO.Path]::GetFileNameWithoutExtension($modelFile.Name)
 Write-Host -NoNewline "Using model: `e[38;5;117m$($modelFile.FullName)`e[39m"
 
-# Ensure context.ini exists in the model's directory
-$contextIni = Join-Path $modelFile.DirectoryName "context.ini"
-if (-not (Test-Path $contextIni)) {
-    New-Item -Path $contextIni -ItemType File | Out-Null
-}
-
-# Set CtxSize, either from cli arg, or by reading from .ini file, or use default (safe) value
-if ($PSBoundParameters.ContainsKey('CtxSize')) {
-    $lines = Get-Content $contextIni | Where-Object { -not ($_ -match "^$modelName=") }
-    if (-not $lines) {
-        $lines = @()
-    } elseif ($lines -is [string]) {
-        $lines = @($lines)
-    }
-    $lines += "$modelName=$CtxSize"
-
-    Set-Content $contextIni -Value $lines
-} else {
-    $entry = Select-String "^$modelName=" $contextIni | Select-Object -First 1
-    if ($entry) {
-        $CtxSize = $entry.Line.Split('=')[1]
-    } else {
-        $CtxSize = $DefaultContextSize
-    }
+# Set CtxSize from cli arg
+if (-not $PSBoundParameters.ContainsKey('CtxSize')) {
+    Write-Host "`n`e[91mError:`e[39m You must specify a <context_size> parameter!`n"
+    exit 1
 }
 Write-Host " (context size: `e[38;5;226m$CtxSize`e[39m)"
 
@@ -131,24 +109,24 @@ $cmdArgs = @(
 ) + $LlamaServerArgs + @(
     "--model '$($modelFile.FullName)'"
     "--ctx-size $CtxSize"
-    "--cache-type-k q8_0"
-    "--cache-type-v q8_0"
+    "--cache-type-k $(($Env:LLMS_CACHE_TYPE_K ?? ($config | Where-Object Key -eq 'CacheTypeK').Value) ?? "q8_0")"
+    "--cache-type-v $(($Env:LLMS_CACHE_TYPE_V ?? ($config | Where-Object Key -eq 'CacheTypeV').Value) ?? "q8_0")"
+    "--ubatch-size $(($Env:LLMS_UBATCH_SIZE ?? ($config | Where-Object Key -eq 'UbatchSize').Value) ?? 1024)"
+    "--n-gpu-layers $(($Env:LLMS_N_GPU_LAYERS ?? ($config | Where-Object Key -eq 'NGpuLayers').Value) ?? 999)"
     "--flash-attn"
-    "--ubatch-size 1024"
-    "--n-gpu-layers 99"
     "--threads $([Environment]::ProcessorCount)"
-    "--host $($Env:LLMS_HOST ?? "127.0.0.1")"
-    "--port $($Env:LLMS_PORT ?? "8080")"
-    "--api-key $($Env:LLMS_API_KEY ?? "secret")"
+    "--host $(($Env:LLMS_HOST ?? ($config | Where-Object Key -eq 'Host').Value) ?? "127.0.0.1")"
+    "--port $(($Env:LLMS_PORT ?? ($config | Where-Object Key -eq 'Port').Value) ?? "8080")"
+    "--api-key $(($Env:LLMS_API_KEY ?? ($config | Where-Object Key -eq 'ApiKey').Value) ?? "secret")"
 )
 $command = $cmdArgs -join ' '
 
 if ($LlamaServerArgs -contains "--dry-run") {
     # remove --dry-run from the command for display
-    $displayCommand = $command -replace '--dry-run ', ''
+    $displayCommand = $command -replace ' --dry-run', ''
     # replace the API key value with asterisks
     $displayCommand = $displayCommand -replace '--api-key [^ ]+', '--api-key ****'
-    Write-Host "Dry run: $displayCommand"
+    Write-Host ("Dry run: $displayCommand" -replace ' --', "`n  --")
     exit 0
 }
 
