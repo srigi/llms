@@ -32,9 +32,9 @@ llms list
 #### `<partial_model_name>`
 Run a model matching the partial name
 ```powershell
-llms Qwen3-30B-A3B.i1-Q4 25000
+llms Mistral-Small-3.1-24B-Instruct-2503-UD-Q4 64000
 ```
-![PowerShell terminal showcasing `llsm <partial_model_name>` command](https://i.postimg.cc/43sBK6Mh/Clipboard03.png)
+![PowerShell terminal showcasing `llsm <partial_model_name>` command](https://i.postimg.cc/jKNBKgzn/Clipboard01.png)
 
 
 ## Configuration
@@ -64,12 +64,19 @@ Precedence of ModelsDirs configuration is:
 Run a model with additional arguments of llama-server:
 
 ```powershell
-llms Llama-3.1-8B-Instruct-Q4 25000 --chat-template llama3
+llms GLM-4-32B 24000 --chat-template-file C:\Users\srigi\llm\chat-template-chatml.jinja
 ```
+
+![PowerShell terminal showcasing `llsm with --dry-run option](https://i.postimg.cc/j59R45tb/Clipboard01.png)
+
 
 #### --dry-run
 
 Print the command that would be executed without actually running it:
+
+```powershell
+llms Devstral-Small-2505-UD-Q4 100000 --no-webui --dry-run
+```
 
 ![PowerShell terminal showcasing `llsm with --dry-run option](https://i.postimg.cc/d0yv6FNP/Clipboard01.png)
 
