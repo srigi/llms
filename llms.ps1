@@ -9,11 +9,15 @@ param(
     [string[]]$LlamaServerArgs
 )
 
-if (-not $ModelPattern) {
+function Print-Help {
     $ScriptName = [System.IO.Path]::GetFileNameWithoutExtension($PSCommandPath)
 
     Write-Host "usage:`n  $ScriptName list`n  $ScriptName <partial_model_name> <context_size> [llama-server args...] [--dry-run]"
     Write-Host "`nexample:`n  $ScriptName list`n  $ScriptName Devstral-Small-2505-UD 24000`n  $ScriptName Mistral-Small-3.1-24B 32000 --jinja`n  $ScriptName Mistral-Small-3.1-24B 32000 --jinja --dry-run`n"
+}
+
+if (-not $ModelPattern) {
+    Print-Help
     exit 1
 }
 
@@ -88,6 +92,7 @@ Write-Host -NoNewline "Using model: `e[38;5;117m$($modelFile.FullName)`e[39m"
 # Set CtxSize from cli arg
 if (-not $PSBoundParameters.ContainsKey('CtxSize')) {
     Write-Host "`n`e[91mError:`e[39m You must specify a <context_size> parameter!`n"
+    Print-Help
     exit 1
 }
 Write-Host " (context size: `e[38;5;226m$CtxSize`e[39m)"
