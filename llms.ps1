@@ -1,15 +1,16 @@
-#!/usr/bin/env pwsh
-
 param(
     [Parameter(Position=0)]
+    [ValidateNotNullOrEmpty()]
     [string]$ModelPattern,
+
     [Parameter(Position=1)]
     [int]$CtxSize,
+
     [Parameter(ValueFromRemainingArguments)]
     [string[]]$LlamaServerArgs
 )
 
-function Print-Help {
+function Show-Help {
     $ScriptName = [System.IO.Path]::GetFileNameWithoutExtension($PSCommandPath)
 
     Write-Host "usage:`n  $ScriptName list`n  $ScriptName <partial_model_name> <context_size> [llama-server args...] [--dry-run]"
@@ -17,7 +18,7 @@ function Print-Help {
 }
 
 if (-not $ModelPattern) {
-    Print-Help
+    Show-Help
     exit 1
 }
 
@@ -86,13 +87,12 @@ if (-not $modelFile) {
     Write-Host "`e[91mError:`e[39m No model file found matching '*$ModelPattern*.gguf' in any of the configured directories:`n  $($ModelsDirs -join ', ')`n"
     exit 1
 }
-$modelName = [System.IO.Path]::GetFileNameWithoutExtension($modelFile.Name)
 Write-Host -NoNewline "Using model: `e[38;5;117m$($modelFile.FullName)`e[39m"
 
 # Set CtxSize from cli arg
 if (-not $PSBoundParameters.ContainsKey('CtxSize')) {
     Write-Host "`n`e[91mError:`e[39m You must specify a <context_size> parameter!`n"
-    Print-Help
+    Show-Help
     exit 1
 }
 Write-Host " (context size: `e[38;5;226m$CtxSize`e[39m)"
@@ -108,11 +108,9 @@ if ($mmprojFiles -and $mmprojFiles.Count -gt 0) {
     $LlamaServerArgs += "--no-mmproj"
 }
 
-# Assemble the command
-$cmdArgs = @(
-    "llama-server"
-) + $LlamaServerArgs + @(
-    "--model '$($modelFile.FullName)'"
+# Assemble the llama-server arguments
+$llmsArgs = ($LlamaServerArgs + @(
+    "--model $($modelFile.FullName)"
     "--ctx-size $CtxSize"
     "--cache-type-k $(($Env:LLMS_CACHE_TYPE_K ?? ($config | Where-Object Key -eq 'CacheTypeK').Value) ?? "q8_0")"
     "--cache-type-v $(($Env:LLMS_CACHE_TYPE_V ?? ($config | Where-Object Key -eq 'CacheTypeV').Value) ?? "q8_0")"
@@ -123,17 +121,16 @@ $cmdArgs = @(
     "--host $(($Env:LLMS_HOST ?? ($config | Where-Object Key -eq 'Host').Value) ?? "127.0.0.1")"
     "--port $(($Env:LLMS_PORT ?? ($config | Where-Object Key -eq 'Port').Value) ?? "8080")"
     "--api-key $(($Env:LLMS_API_KEY ?? ($config | Where-Object Key -eq 'ApiKey').Value) ?? "secret")"
-)
-$command = $cmdArgs -join ' '
+)) -join ' '
 
 if ($LlamaServerArgs -contains "--dry-run") {
     # remove --dry-run from the command for display
-    $displayCommand = $command -replace ' --dry-run', ''
+    $displayArgs = $llmsArgs -replace ' --dry-run', ''
     # replace the API key value with asterisks
-    $displayCommand = $displayCommand -replace '--api-key [^ ]+', '--api-key ****'
-    Write-Host ("Dry run: $displayCommand" -replace ' --', "`n  --")
+    $displayArgs = $displayArgs -replace '--api-key [^ ]+', '--api-key ****'
+    Write-Host ("Dry run: llama-server $displayArgs" -replace ' --', "`n  --")
     exit 0
 }
 
 # Execute the command
-Invoke-Expression $command
+Start-Process -FilePath "llama-server" -ArgumentList $llmsArgs -NoNewWindow -Wait
