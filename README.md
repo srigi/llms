@@ -71,7 +71,7 @@ llms Llama-3.1-8B-Instruct-Q4 25000 --chat-template llama3
 
 Print the command that would be executed without actually running it:
 
-![PowerShell terminal showcasing `llsm with --dry-run option](https://i.postimg.cc/7YkgbDbQ/Clipboard01.png)
+![PowerShell terminal showcasing `llsm with --dry-run option](https://i.postimg.cc/d0yv6FNP/Clipboard01.png)
 
 
 ## ENV vars

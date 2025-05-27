@@ -144,7 +144,11 @@ $cmdArgs = @(
 $command = $cmdArgs -join ' '
 
 if ($LlamaServerArgs -contains "--dry-run") {
-    Write-Host "Dry run: $command"
+    # remove --dry-run from the command for display
+    $displayCommand = $command -replace '--dry-run ', ''
+    # replace the API key value with asterisks
+    $displayCommand = $displayCommand -replace '--api-key [^ ]+', '--api-key ****'
+    Write-Host "Dry run: $displayCommand"
     exit 0
 }
 
