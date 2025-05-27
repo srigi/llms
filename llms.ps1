@@ -121,6 +121,8 @@ if ($mmprojFiles -and $mmprojFiles.Count -gt 0) {
     $LlamaServerArgs += "--mmproj", "$($mmprojFile.FullName)"
     $LlamaServerArgs += "--no-mmproj-offload"
     Write-Host "Adding companion model: `e[38;5;117m$($mmprojFile.FullName)`e[39m"
+} else {
+    $LlamaServerArgs += "--no-mmproj"
 }
 
 # Run llama-server with found model
@@ -130,6 +132,7 @@ llama-server $LlamaServerArgs `
     --cache-type-k q8_0 `
     --cache-type-v q8_0 `
     --flash-attn `
+    --ubatch-size 1024 `
     --n-gpu-layers 99 `
     --threads "$([Environment]::ProcessorCount)" `
     --host "$($Env:LLMS_HOST ?? "127.0.0.1")" `
