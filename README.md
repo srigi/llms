@@ -67,6 +67,13 @@ Run a model with additional arguments of llama-server:
 llms Llama-3.1-8B-Instruct-Q4 25000 --chat-template llama3
 ```
 
+#### --dry-run
+
+Print the command that would be executed without actually running it:
+
+![PowerShell terminal showcasing `llsm with --dry-run option](https://i.postimg.cc/7YkgbDbQ/Clipboard01.png)
+
+
 ## ENV vars
 - `LLMS_API_KEY` - API key to use for authentication (default: `secret`)
 - `LLMS_HOST` - IP address for llama-server to bind to (127.0.0.1 if not specified)

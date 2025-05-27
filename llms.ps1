@@ -125,16 +125,28 @@ if ($mmprojFiles -and $mmprojFiles.Count -gt 0) {
     $LlamaServerArgs += "--no-mmproj"
 }
 
-# Run llama-server with found model
-llama-server $LlamaServerArgs `
-    --model "$($modelFile.FullName)" `
-    --ctx-size "$CtxSize" `
-    --cache-type-k q8_0 `
-    --cache-type-v q8_0 `
-    --flash-attn `
-    --ubatch-size 1024 `
-    --n-gpu-layers 99 `
-    --threads "$([Environment]::ProcessorCount)" `
-    --host "$($Env:LLMS_HOST ?? "127.0.0.1")" `
-    --port "$($Env:LLMS_PORT ?? "8080")" `
-    --api-key "$($Env:LLMS_API_KEY ?? "secret")"
+# Assemble the command
+$cmdArgs = @(
+    "llama-server"
+) + $LlamaServerArgs + @(
+    "--model '$($modelFile.FullName)'"
+    "--ctx-size $CtxSize"
+    "--cache-type-k q8_0"
+    "--cache-type-v q8_0"
+    "--flash-attn"
+    "--ubatch-size 1024"
+    "--n-gpu-layers 99"
+    "--threads $([Environment]::ProcessorCount)"
+    "--host $($Env:LLMS_HOST ?? "127.0.0.1")"
+    "--port $($Env:LLMS_PORT ?? "8080")"
+    "--api-key $($Env:LLMS_API_KEY ?? "secret")"
+)
+$command = $cmdArgs -join ' '
+
+if ($LlamaServerArgs -contains "--dry-run") {
+    Write-Host "Dry run: $command"
+    exit 0
+}
+
+# Execute the command
+Invoke-Expression $command
