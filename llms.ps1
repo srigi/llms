@@ -13,8 +13,8 @@ param(
 function Show-Help {
     $ScriptName = [System.IO.Path]::GetFileNameWithoutExtension($PSCommandPath)
 
-    Write-Host "usage:`n  $ScriptName list`n  $ScriptName <partial_model_name> <context_size> [llama-server args...] [--dry-run]"
-    Write-Host "`nexample:`n  $ScriptName list`n  $ScriptName Devstral-Small-2505-UD 24000`n  $ScriptName Mistral-Small-3.1-24B 32000 --jinja`n  $ScriptName Mistral-Small-3.1-24B 32000 --jinja --dry-run`n"
+    Write-Output "usage:`n  $ScriptName list`n  $ScriptName <partial_model_name> <context_size> [llama-server args...] [--dry-run]"
+    Write-Output "`nexample:`n  $ScriptName list`n  $ScriptName Devstral-Small-2505-UD 24000`n  $ScriptName Mistral-Small-3.1-24B 32000 --jinja`n  $ScriptName Mistral-Small-3.1-24B 32000 --jinja --dry-run`n"
 }
 
 if (-not $ModelPattern) {

@@ -184,3 +184,17 @@ llms <partial_model_name> <context_size> [llama-server args...] [--dry-run]
 
 - The script uses all available CPU threads automatically
 - Flash attention is enabled by default for better performance
+
+## Testing
+
+This project uses [Pester v5](https://pester.dev/) for testing. To run the tests:
+
+1. Ensure Pester is installed:
+   ```powershell
+   Install-Module -Name Pester -Force -Scope CurrentUser
+   ```
+
+2. Run the tests:
+   ```powershell
+   Invoke-Pester ./llms.tests.ps1
+   ```
