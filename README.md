@@ -1,6 +1,10 @@
-# llms.ps1
+# LLMS Wrapper Scripts
 
-A PowerShell wrapper script for `llama-server` that simplifies the process of listing and running `.gguf` models with comprehensive configuration management through environment variables and/or configuration file.
+Cross-platform wrapper scripts for [`llama-server`](https://github.com/ggml-org/llama.cpp/releases) that simplify the process of listing and running `.gguf` models with comprehensive configuration management through environment variables and/or configuration files.
+
+**Available Scripts:**
+- **`llms.ps1`** - PowerShell script for Windows, Linux, and macOS (PowerShell Core)
+- **`llms`** - Bash script for UNIX systems (Linux, macOS, WSL)
 
 ## Project intent
 
@@ -12,25 +16,50 @@ This script serves as an intelligent wrapper around `llama-server` that:
 - **Offers dry-run capability**: Preview commands before execution
 - **Maintains consistent defaults**: Fallback values ensure the script works out-of-the-box
 
+## Features
+
+- **Cross-platform support**: PowerShell script for Windows, bash script for UNIX systems
+- **Smart model discovery**: Searches multiple directories for `.gguf` files
+- **Partial name matching**: Find models without typing complete filenames
+- **Multi-modal support**: Automatically loads companion `.mmproj-*.gguf` files
+- **Flexible configuration**: Environment variables override INI file settings with platform-appropriate paths
+- **Fallback defaults**: Works out-of-the-box with sensible defaults
+- **Dry-run capability**: Preview commands before execution
+- **Color-coded output**: Enhanced terminal display with syntax highlighting
+- **Error handling**: Clear error messages for missing configurations and models
+- **Configuration priority**: Script directory configs override user configs
+
 ## Basic usage
 
+Both scripts share identical command syntax and functionality.
+
+### Parameters
+- `list`: List all available `.gguf` models in configured directories
+- `<partial_model_name>`: Partial name to match against model files (case-insensitive)
+- `<context_size>`: **Required** - Context window size for the model
+- `[llama-server args...]`: Optional additional arguments passed to `llama-server`
+- `[--dry-run]`: Preview the command without executing it
+
 ### List available Models
-```powershell
+
+```bash
 llms list
 ```
-![PowerShell terminal showcasing `llsm list` command](https://i.postimg.cc/507VKNvn/Clipboard01-1.png)
+
+![Terminal showcasing `llms list` command](https://i.postimg.cc/507VKNvn/Clipboard01-1.png)
 
 ### Run a Model (required parameters)
-```powershell
+
+```bash
 llms <partial_model_name> <context_size>
 ```
 
-***Note**: `context_size` is now a **required parameter**.*
-
-```powershell
+**example:**
+```bash
 llms Mistral-Small-3.1-24B-Instruct-2503-UD-Q4 64000
 ```
-![PowerShell terminal showcasing `llsm <partial_model_name>` command](https://i.postimg.cc/jKNBKgzn/Clipboard01.png)
+
+![Terminal showcasing `llms <partial_model_name>` command](https://i.postimg.cc/jKNBKgzn/Clipboard01.png)
 
 ### Multi-modal Model support
 The script automatically detects companion `.mmproj-*.gguf` files and adds appropriate parameters.
@@ -38,28 +67,31 @@ The script automatically detects companion `.mmproj-*.gguf` files and adds appro
 ## Advanced usage
 
 ### Passing additional llama-server arguments
-```powershell
+```bash
 llms <partial_model_name> <context_size> [llama-server args...]
 ```
 
-Example with custom chat template:
-```powershell
-llms GLM-4-32B 24000 --chat-template-file C:\Users\srigi\llm\chat-template-chatml.jinja
+**example with custom chat template:**
+
+```bash
+llms GLM-4-32B 24000 --chat-template-file ~/llm/chat-template-chatml.jinja
 ```
 
 ### Dry-Run mode
 Preview the command that would be executed without running it:
-```powershell
+```bash
 llms Devstral-Small-2505-UD-Q4 100000 --no-webui --dry-run
 ```
-![PowerShell terminal showcasing `llms with --dry-run option](https://i.postimg.cc/y8WYMYzg/Clipboard03.png)
+![Terminal showcasing `llms` with --dry-run option](https://i.postimg.cc/y8WYMYzg/Clipboard03.png)
 
 ## Configuration System
 
 ### Configuration Priority (Highest to Lowest)
 1. **Environment Variables** (always override everything)
-2. **llms.ini** in current directory
-3. **llms.ini** in `%USERPROFILE%\AppData\Local`
+2. **llms.ini** in script directory (highest file priority)
+3. **llms.ini** in user config directory:
+   - **Windows:** `%USERPROFILE%\AppData\Local\llms.ini`
+   - **Linux/macOS:** `~/.config/llms.ini` (or `$XDG_CONFIG_HOME/llms.ini`)
 4. **Fallback values** in code
 
 ### Environment Variables
@@ -79,11 +111,17 @@ All configuration options can be set via environment variables:
 
 ### Configuration File (llms.ini)
 
-The script looks for `llms.ini` in these locations (in order):
-1. Current directory (`./llms.ini`)
-2. User's local app data (`%USERPROFILE%\AppData\Local\llms.ini`)
+The scripts look for `llms.ini` in these locations (in priority order):
 
-#### llms.ini Format
+**Priority 1: Script Directory**
+- Same directory as the script (`./llms.ini`)
+
+**Priority 2: User Config Directory**
+- **Windows:** `%USERPROFILE%\AppData\Local\llms.ini`
+- **Linux/macOS:** `~/.config/llms.ini` (or `$XDG_CONFIG_HOME/llms.ini`)
+
+#### llms.ini format
+
 ```ini
 # Model directories (comma-separated paths)
 ModelsDirs = C:\path\to\models1,D:\path\to\models2
@@ -95,10 +133,11 @@ UbatchSize = 1024
 NGpuLayers = 99
 
 # Network settings (can also be set via ENV)
-# Host = 127.0.0.1
-# Port = 8080
-# ApiKey = secret
+Host = 0.0.0.0
+Port = 8080
+ApiKey = secret
 ```
+
 
 ### Configuration Directives Reference
 
@@ -116,28 +155,51 @@ NGpuLayers = 99
 ## Configuration Examples
 
 ### Example 1: Environment Variables Only
+
+**PowerShell:**
 ```powershell
 $env:LLMS_MODELS_DIRS = "C:\models,D:\ai-models"
-$env:LLMS_PORT = "8081"
-$env:LLMS_N_GPU_LAYERS = "50"
+$env:LLMS_PORT = 8081
+$env:LLMS_N_GPU_LAYERS = 50
+llms mistral 32000
+```
+
+**Bash:**
+```bash
+LLMS_MODELS_DIRS="/home/user/models,/opt/ai-models" \
+LLMS_PORT=8080 \
+LLMS_N_GPU_LAYERS=50 \
 llms mistral 32000
 ```
 
 ### Example 2: Mixed Configuration
+
+**llms.ini:**
 ```ini
-# llms.ini
 ModelsDirs = C:\models,D:\ai-models
+# or Linux/macOS paths
+#ModelsDirs = /home/user/models,/opt/ai-models
+
 UbatchSize = 2048
 NGpuLayers = 40
 ```
 
+**override via environment:**
+
+*PowerShell:*
 ```powershell
-# Override specific settings via ENV
-$env:LLMS_PORT = "8081"  # This overrides any Port setting in llms.ini
+$env:LLMS_PORT = 8081
+llms mistral 32000
+```
+
+*Bash:*
+```bash
+LLMS_PORT=8081 \
 llms mistral 32000
 ```
 
 ### Example 3: Complete llms.ini
+
 ```ini
 # Model locations
 ModelsDirs = C:\Users\username\models,D:\shared-models,E:\large-models
@@ -156,41 +218,19 @@ ApiKey = my-secret-key
 
 ## Command Syntax
 
-```powershell
+Both scripts use identical syntax:
+```bash
 llms list
 llms <partial_model_name> <context_size> [llama-server args...] [--dry-run]
 ```
 
-### Parameters
-- `list`: List all available `.gguf` models in configured directories
-- `<partial_model_name>`: Partial name to match against model files (case-insensitive)
-- `<context_size>`: **Required** - Context window size for the model
-- `[llama-server args...]`: Optional additional arguments passed to `llama-server`
-- `[--dry-run]`: Preview the command without executing it
-
-## Features
-
-- **Smart model discovery**: Searches multiple directories for `.gguf` files
-- **Partial name matching**: Find models without typing complete filenames
-- **Multi-modal support**: Automatically loads companion `.mmproj-*.gguf` files
-- **Flexible configuration**: Environment variables override INI file settings
-- **Fallback defaults**: Works out-of-the-box with sensible defaults
-- **Dry-run capability**: Preview commands before execution
-- **Color-coded output**: Enhanced terminal display with syntax highlighting
-- **Error handling**: Clear error messages for missing configurations and models
-- **Cross-platform**: Works on Windows, Linux, and macOS with PowerShell Core
-
-## Notes
-
-- The script uses all available CPU threads automatically
-- Flash attention is enabled by default for better performance
-
 ## Testing
 
-This project uses [Pester v5](https://pester.dev/) for testing. To run the tests:
+### PowerShell Script Testing
+This project uses [Pester v5](https://pester.dev/) for testing the PowerShell script. To run the tests:
 
 1. Ensure Pester is installed:
-   ```powershell
+   ```powershell  
    Install-Module -Name Pester -Force -Scope CurrentUser
    ```
 
@@ -198,3 +238,6 @@ This project uses [Pester v5](https://pester.dev/) for testing. To run the tests
    ```powershell
    Invoke-Pester ./llms.tests.ps1
    ```
+
+### Bash Script Testing
+The bash script has been manually tested on macOS and should work on Linux systems. Automated testing for the bash script is planned for future releases.
