@@ -1,74 +1,208 @@
 #!/bin/sh
 
-MODEL_DIR="$HOME/.llm"
-DEFAULT_CTX_SIZE=32000
-LLAMA_SERVER_ARGS=""
-llama_args_start_index=2
+show_help() {
+	SCRIPT_NAME=$(basename "$0")
+	echo "usage:"
+	echo "  $SCRIPT_NAME list"
+	echo "  $SCRIPT_NAME <partial_model_name> <context_size> [llama-server args...] [--dry-run]"
+	echo ""
+	echo "example:"
+	echo "  $SCRIPT_NAME list"
+	echo "  $SCRIPT_NAME Devstral-Small-2505-UD 24000"
+	echo "  $SCRIPT_NAME Mistral-Small-3.1-24B 32000 --jinja"
+	echo "  $SCRIPT_NAME Mistral-Small-3.1-24B 32000 --jinja --dry-run"
+	echo ""
+}
 
-# check if (partial) model name argument is provided
 if [ -z "$1" ]; then
-  SCRIPT_NAME=$(basename "$0")
-  echo "usage:\n  $SCRIPT_NAME list | <partial_model_name>\n  $SCRIPT_NAME <partial_model_name> [ctx_size] [-- <llama_server_args>...]\n"
-  echo "example:\n  $SCRIPT_NAME list\n  $SCRIPT_NAME codethink 25000 -- --jinja --chat-template-file ~/chat-template.jinja"
-  exit 1
-fi
-if [ "$1" = "list" ]; then
-  echo "Available models in $MODEL_DIR:"
-  MODEL_FILES=$(find "$MODEL_DIR" -maxdepth 1 -type f -iname "*.gguf")
-  if [ -z "$MODEL_FILES" ]; then
-    echo "  No models found in $MODEL_DIR"
-    exit 1
-  fi
-  
-  echo "$MODEL_FILES" | while read -r file; do echo "  $(basename "$file")"; done
-  exit 0
+	show_help
+	exit 0
 fi
 
-# find the model file, take the first match if multiple exist
-MODEL_FILE=$(find "$MODEL_DIR" -maxdepth 1 -type f -iname "*$1*.gguf" | head -n 1)
-if [ -z "$MODEL_FILE" ]; then
-  echo "Error: No model file found matching '*$1*.gguf' in $MODEL_DIR"
-  exit 1
-fi
-MODEL_NAME=$(basename "$MODEL_FILE" .gguf)
-echo "Using model: $MODEL_NAME\c"
+load_config() {
+	# Parse ini file and export as environment variables with LLMS_ prefix
+	local ini_file="$1"
+	if [ -f "$ini_file" ]; then
+		while IFS='=' read -r key value; do
+			# Skip empty lines and comments
+			case "$key" in
+				''|'#'*|';'*) continue ;;
+				*)
+					# Remove whitespace
+					key=$(echo "$key" | tr -d ' \t')
+					value=$(echo "$value" | tr -d ' \t')
+					if [ -n "$key" ] && [ -n "$value" ]; then
+						# Convert CamelCase to snake_case for environment variable names
+						# e.g., ModelsDirs -> MODELS_DIRS
+						upper_key=$(echo "$key" | tr '[:lower:]' '[:upper:]')
+						snake_case_key=$(echo "$key" | sed 's/\([A-Z]\)/_\1/g' | tr '[:lower:]' '[:upper:]' | sed 's/^_//')
+						export "LLMS_${snake_case_key}"="$value"
+					fi
+					;;
+			esac
+		done < "$ini_file"
+	fi
+}
 
-# ensure context.ini exists
-if [ ! -f "$MODEL_DIR/context.ini" ]; then
-    touch "$MODEL_DIR/context.ini"
+# Load configuration from user config first, then override with local script directory
+if [ -n "$XDG_CONFIG_HOME" ]; then
+	load_config "$XDG_CONFIG_HOME/llms.ini"
+elif [ -n "$HOME" ]; then
+	load_config "$HOME/.config/llms.ini"
 fi
+load_config "$(dirname "$0")/llms.ini"
 
-# set CTX_SIZE, either from cli arg, or by reading from .ini file, or use default (safe) value
-if [ -n "$2" ] && [ "$2" != "--" ]; then
-    CTX_SIZE="$2"
-    # save provided CTX_SIZE for MODEL_NAME
-    sed -i "" "/^$MODEL_NAME=/d" "$MODEL_DIR/context.ini"
-    echo "$MODEL_NAME=$CTX_SIZE" >> "$MODEL_DIR/context.ini"
-    llama_args_start_index=3
+# Get ModelsDirs from ENV or default
+if [ -n "$LLMS_MODELS_DIRS" ]; then
+	MODELS_DIRS="$LLMS_MODELS_DIRS"
 else
-    # check if context.ini has an entry for MODEL_NAME
-    CTX_SIZE=$(grep "^$MODEL_NAME=" "$MODEL_DIR/context.ini" | cut -d= -f2)
-    if [ -z "$CTX_SIZE" ]; then
-        CTX_SIZE=$DEFAULT_CTX_SIZE
-    fi
+	echo "\033[91mError:\033[39m \033[95mModelsDirs\033[39m not configured (either by ENV variable \033[94mLLMS_MODELS_DIRS\033[39m, or in \033[94mllms.ini\033[39m file)!"
+	echo ""
+	exit 1
 fi
-echo " (context size: $CTX_SIZE)"
 
-# Parse additional arguments for llama-server after '--'
-shift $((llama_args_start_index - 1))
-while [ "$#" -gt 0 ]; do
-    if [ "$1" = "--" ]; then
-        shift # remove '--'
-        LLAMA_SERVER_ARGS="$@"
-        break
-    fi
-    shift
+if [ "$1" = "list" ]; then
+	echo "Searching for .gguf models in:"
+	
+	# Use a temporary file to track if models were found
+	temp_file="/tmp/llms_found_models.$$"
+	echo "false" > "$temp_file"
+	
+	# Split MODELS_DIRS by comma and iterate
+	echo "$MODELS_DIRS" | tr ',' '\n' | while read -r dir; do
+		[ -z "$dir" ] && continue
+		echo ""
+		echo "  $dir:"
+		if [ -d "$dir" ]; then
+			dir_has_models=false
+			for file in "$dir"/*.gguf; do
+				if [ -f "$file" ]; then
+					dir_has_models=true
+					echo "true" > "$temp_file"
+					size_bytes=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo "0")
+					size_gb=$(echo "scale=2; $size_bytes / 1073741824" | bc 2>/dev/null || echo "0.00")
+					if [ "$(echo "$size_gb < 10" | bc 2>/dev/null)" = "1" ]; then
+						padding="( "
+					else
+						padding="("
+					fi
+					printf "	\033[38;5;244m%s%.2fGB)\033[39m %s\n" "$padding" "$size_gb" "$(basename "$file")"
+				fi
+			done
+			if ! $dir_has_models; then
+				echo "	No models found"
+			fi
+		else
+			echo "	Directory does not exist"
+		fi
+	done
+	
+	# Check if any models were found
+	found_models=$(cat "$temp_file")
+	rm -f "$temp_file"
+	
+	if [ "$found_models" = "false" ]; then
+		echo ""
+		echo "\033[91mError:\033[39m No models found in any configured directory!"
+		echo ""
+		exit 1
+	fi
+	exit 0
+fi
+
+# Find the model file
+MODEL_FILE=""
+echo "$MODELS_DIRS" | tr ',' '\n' | while read -r dir; do
+	[ -z "$dir" ] && continue
+	for file in "$dir"/*"$1"*.gguf; do
+		if [ -f "$file" ]; then
+			echo "$file"
+			exit 0
+		fi
+	done
+done > /tmp/llms_model_search.$$
+MODEL_FILE=$(cat /tmp/llms_model_search.$$ | head -n 1)
+rm -f /tmp/llms_model_search.$$
+
+if [ -z "$MODEL_FILE" ]; then
+	echo "\033[91mError:\033[39m No model file found matching '*$1*.gguf' in any of the configured directories:"
+	echo "  $(echo "$MODELS_DIRS" | tr ',' ', ')"
+	echo ""
+	exit 1
+fi
+printf "Using model: \033[38;5;117m%s\033[39m" "$MODEL_FILE"
+
+# Set CTX_SIZE from cli arg
+if [ -z "$2" ]; then
+	echo ""
+	echo "\033[91mError:\033[39m You must specify a <context_size> parameter!"
+	echo ""
+	show_help
+	exit 1
+fi
+CTX_SIZE="$2"
+printf " (context size: \033[38;5;226m%s\033[39m)\n" "$CTX_SIZE"
+
+# Check for mmproj files
+MODEL_DIR=$(dirname "$MODEL_FILE")
+MODEL_BASE=$(basename "$MODEL_FILE" .gguf)
+for mmproj_file in "$MODEL_DIR/$MODEL_BASE.mmproj-"*.gguf; do
+	if [ -f "$mmproj_file" ]; then
+		MMPROJ_ARGS="--mmproj '$mmproj_file' --no-mmproj-offload"
+		printf "Adding companion model: \033[38;5;117m%s\033[39m\n" "$mmproj_file"
+		break
+	fi
 done
+if [ -z "$MMPROJ_ARGS" ]; then
+	MMPROJ_ARGS="--no-mmproj"
+fi
 
-# run llama-server with found model
-llama-server "$LLAMA_SERVER_ARGS" \
-	--model "$MODEL_FILE" \
-	--ctx-size "$CTX_SIZE" \
-	--n-gpu-layers 99 \
-	--threads "$(sysctl hw.ncpu | awk '{print $2}')" \
-	--api-key secret
+# Parse additional arguments for llama-server
+shift 2  # Remove model pattern and ctx_size
+LLAMA_SERVER_ARGS="$*"
+
+# Get configuration values with defaults
+CACHE_TYPE_K=${LLMS_CACHE_TYPE_K:-"q8_0"}}
+CACHE_TYPE_V=${LLMS_CACHE_TYPE_V:-"q8_0"}}
+UBATCH_SIZE=${LLMS_UBATCH_SIZE:-"1024"}}
+N_GPU_LAYERS=${LLMS_N_GPU_LAYERS:-"999"}}
+HOST=${LLMS_HOST:-"127.0.0.1"}
+PORT=${LLMS_PORT:-"8080"}
+API_KEY=${LLMS_API_KEY:-"secret"}}
+
+# Get number of CPU threads
+if command -v sysctl >/dev/null 2>&1; then
+	THREADS=$(sysctl -n hw.ncpu 2>/dev/null || echo "$(nproc)")
+else
+	THREADS=$(nproc 2>/dev/null || echo "4")
+fi
+
+# Assemble the complete command
+CMD="llama-server $LLAMA_SERVER_ARGS $MMPROJ_ARGS \
+	--model '$MODEL_FILE' \
+	--ctx-size '$CTX_SIZE' \
+	--cache-type-k '$CACHE_TYPE_K' \
+	--cache-type-v '$CACHE_TYPE_V' \
+	--ubatch-size '$UBATCH_SIZE' \
+	--n-gpu-layers '$N_GPU_LAYERS' \
+	--flash-attn \
+	--threads '$THREADS' \
+	--host '$HOST' \
+	--port '$PORT' \
+	--api-key '$API_KEY'"
+
+# Check for --dry-run
+case " $LLAMA_SERVER_ARGS " in
+	*" --dry-run "*)
+		# Remove --dry-run from display command
+		DISPLAY_CMD=$(echo "$CMD" | sed 's/ --dry-run//')
+		# Replace API key with asterisks
+		DISPLAY_CMD=$(echo "$DISPLAY_CMD" | sed "s/--api-key '[^']*'/--api-key '****'/")
+		# Format with line breaks
+		echo "Dry run: $(echo "$DISPLAY_CMD" | sed 's/ --/\n  --/g')"
+		exit 0
+		;;
+esac
+
+# Execute the command
+eval "$CMD"
