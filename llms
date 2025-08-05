@@ -1,0 +1,74 @@
+#!/bin/sh
+
+MODEL_DIR="$HOME/.llm"
+DEFAULT_CTX_SIZE=32000
+LLAMA_SERVER_ARGS=""
+llama_args_start_index=2
+
+# check if (partial) model name argument is provided
+if [ -z "$1" ]; then
+  SCRIPT_NAME=$(basename "$0")
+  echo "usage:\n  $SCRIPT_NAME list | <partial_model_name>\n  $SCRIPT_NAME <partial_model_name> [ctx_size] [-- <llama_server_args>...]\n"
+  echo "example:\n  $SCRIPT_NAME list\n  $SCRIPT_NAME codethink 25000 -- --jinja --chat-template-file ~/chat-template.jinja"
+  exit 1
+fi
+if [ "$1" = "list" ]; then
+  echo "Available models in $MODEL_DIR:"
+  MODEL_FILES=$(find "$MODEL_DIR" -maxdepth 1 -type f -iname "*.gguf")
+  if [ -z "$MODEL_FILES" ]; then
+    echo "  No models found in $MODEL_DIR"
+    exit 1
+  fi
+  
+  echo "$MODEL_FILES" | while read -r file; do echo "  $(basename "$file")"; done
+  exit 0
+fi
+
+# find the model file, take the first match if multiple exist
+MODEL_FILE=$(find "$MODEL_DIR" -maxdepth 1 -type f -iname "*$1*.gguf" | head -n 1)
+if [ -z "$MODEL_FILE" ]; then
+  echo "Error: No model file found matching '*$1*.gguf' in $MODEL_DIR"
+  exit 1
+fi
+MODEL_NAME=$(basename "$MODEL_FILE" .gguf)
+echo "Using model: $MODEL_NAME\c"
+
+# ensure context.ini exists
+if [ ! -f "$MODEL_DIR/context.ini" ]; then
+    touch "$MODEL_DIR/context.ini"
+fi
+
+# set CTX_SIZE, either from cli arg, or by reading from .ini file, or use default (safe) value
+if [ -n "$2" ] && [ "$2" != "--" ]; then
+    CTX_SIZE="$2"
+    # save provided CTX_SIZE for MODEL_NAME
+    sed -i "" "/^$MODEL_NAME=/d" "$MODEL_DIR/context.ini"
+    echo "$MODEL_NAME=$CTX_SIZE" >> "$MODEL_DIR/context.ini"
+    llama_args_start_index=3
+else
+    # check if context.ini has an entry for MODEL_NAME
+    CTX_SIZE=$(grep "^$MODEL_NAME=" "$MODEL_DIR/context.ini" | cut -d= -f2)
+    if [ -z "$CTX_SIZE" ]; then
+        CTX_SIZE=$DEFAULT_CTX_SIZE
+    fi
+fi
+echo " (context size: $CTX_SIZE)"
+
+# Parse additional arguments for llama-server after '--'
+shift $((llama_args_start_index - 1))
+while [ "$#" -gt 0 ]; do
+    if [ "$1" = "--" ]; then
+        shift # remove '--'
+        LLAMA_SERVER_ARGS="$@"
+        break
+    fi
+    shift
+done
+
+# run llama-server with found model
+llama-server "$LLAMA_SERVER_ARGS" \
+	--model "$MODEL_FILE" \
+	--ctx-size "$CTX_SIZE" \
+	--n-gpu-layers 99 \
+	--threads "$(sysctl hw.ncpu | awk '{print $2}')" \
+	--api-key secret
