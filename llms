@@ -162,13 +162,13 @@ shift 2  # Remove model pattern and ctx_size
 LLAMA_SERVER_ARGS="$*"
 
 # Get configuration values with defaults
-CACHE_TYPE_K=${LLMS_CACHE_TYPE_K:-"q8_0"}}
-CACHE_TYPE_V=${LLMS_CACHE_TYPE_V:-"q8_0"}}
-UBATCH_SIZE=${LLMS_UBATCH_SIZE:-"1024"}}
-N_GPU_LAYERS=${LLMS_N_GPU_LAYERS:-"999"}}
+CACHE_TYPE_K=${LLMS_CACHE_TYPE_K:-"q8_0"}
+CACHE_TYPE_V=${LLMS_CACHE_TYPE_V:-"q8_0"}
+UBATCH_SIZE=${LLMS_UBATCH_SIZE:-"1024"}
+N_GPU_LAYERS=${LLMS_N_GPU_LAYERS:-"999"}
 HOST=${LLMS_HOST:-"127.0.0.1"}
 PORT=${LLMS_PORT:-"8080"}
-API_KEY=${LLMS_API_KEY:-"secret"}}
+API_KEY=${LLMS_API_KEY:-"secret"}
 
 # Get number of CPU threads
 if command -v sysctl >/dev/null 2>&1; then
