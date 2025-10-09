@@ -114,7 +114,7 @@ $llmsArgs = ($LlamaServerArgs + @(
     "--ctx-size $CtxSize"
     "--cache-type-k $(($Env:LLMS_CACHE_TYPE_K ?? ($config | Where-Object Key -eq 'CacheTypeK').Value) ?? "q8_0")"
     "--cache-type-v $(($Env:LLMS_CACHE_TYPE_V ?? ($config | Where-Object Key -eq 'CacheTypeV').Value) ?? "q8_0")"
-    "--ubatch-size $(($Env:LLMS_UBATCH_SIZE ?? ($config | Where-Object Key -eq 'UbatchSize').Value) ?? 1024)"
+    "--ubatch-size $(($Env:LLMS_UBATCH_SIZE ?? ($config | Where-Object Key -eq 'UbatchSize').Value) ?? 512)"
     "--n-gpu-layers $(($Env:LLMS_N_GPU_LAYERS ?? ($config | Where-Object Key -eq 'NGpuLayers').Value) ?? 999)"
     "--flash-attn"
     "--threads $([Environment]::ProcessorCount)"
