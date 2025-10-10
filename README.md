@@ -208,7 +208,7 @@ All options support `LLMS_` prefix environment variables. **ENV overrides are te
 ### Boolean Flags
 
 **Per-model flags** (persisted): `--mlock`, `--no-mmap`, `--jinja`, `--cont-batching`, `--context-shift`, etc.
-**Server-wide flags** (not persisted): `--no-webui`, `--verbose`, `--embedding`, `--dry-run`, etc.
+**Server-wide flags** (not persisted): `--no-webui`, `--verbose`, `--dry-run`, etc.
 
 Run `llama-server --help` for complete flag list.
 

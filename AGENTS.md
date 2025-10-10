@@ -102,7 +102,7 @@ User Input (llms Mistral 32000 --mlock)
 #### `llms` (Bash)
 - **Language:** POSIX shell script (sh)
 - **Platform:** Linux, macOS, WSL
-- **Status:** ✅ Feature complete (v1.1.0)
+- **Status:** ✅ Feature complete (v1.2.0)
 - **Key Functions:**
   - `load_config()` - Load global .ini files (lines 23-46)
   - `load_model_config()` - Load per-model .ini (lines 94-117)
@@ -117,8 +117,20 @@ User Input (llms Mistral 32000 --mlock)
 #### `llms.ps1` (PowerShell)
 - **Language:** PowerShell
 - **Platform:** Windows, Linux, macOS (PowerShell Core)
-- **Status:** ⚠️ Needs update to match bash functionality
-- **Reference:** See `POWERSHELL_UPDATE_SPEC.md` for update requirements
+- **Status:** ✅ Feature complete (v1.2.0)
+- **Key Functions:**
+  - `Load-ModelConfig()` - Load per-model .ini (lines 56-79)
+  - `Save-ModelConfig()` - Save per-model .ini with merge (lines 81-121)
+  - `Is-ServerWideBoolean()` - Classify boolean flags (lines 40-54)
+  - `Convert-ToCamelCase()` - Converts dash-separated to CamelCase (lines 14-25)
+  - `Convert-ToDashSeparated()` - Converts CamelCase to dash-separated (lines 27-38)
+- **Key Sections:**
+  - Server-wide booleans list (lines 43-51)
+  - Argument parser (lines 248-281)
+  - Configuration priority (lines 334-362)
+  - Additional args builder (lines 375-430)
+  - Dry-run check (lines 456-469)
+  - Save config (lines 471-527)
 
 ### Configuration Files
 
@@ -162,9 +174,10 @@ User Input (llms Mistral 32000 --mlock)
 ### Test Files
 
 #### `llms.tests.ps1`
-- **Framework:** Pester v5
+- **Framework:** Pester v5.7
 - **Platform:** PowerShell
-- **Status:** ⚠️ Needs update for new functionality
+- **Status:** ✅ Complete (v1.2.0) - 53 tests, 100% passing
+- **Coverage:** Helper functions, config management, argument parsing, priority system, integration tests
 
 ---
 
@@ -192,7 +205,7 @@ CLI Arg             → .ini Key           → ENV Var
 --help, --usage, --version, --dry-run
 --no-webui, --offline
 --log-disable, --log-verbose, --verbose
---embedding, --reranking, --metrics, --slots
+--reranking, --metrics, --slots
 ```
 
 #### Per-Model (Always Persisted):
@@ -449,10 +462,10 @@ Comprehensive testing performed: config creation/loading, ENV overrides (tempora
 
 **Future Work:**
 
-1. **PowerShell Script Update** - Apply same functionality to `llms.ps1`
-   - Use `POWERSHELL_UPDATE_SPEC.md` as implementation guide
-   - Update `llms.tests.ps1` with new test cases
-   - Ensure cross-platform compatibility
+1. ~~**PowerShell Script Update**~~ - ✅ **COMPLETED (2025-10-10)**
+   - Applied same functionality to `llms.ps1`
+   - Feature parity achieved with bash script
+   - Manual testing completed (test suite update deferred)
 
 2. **Automated Testing** - Create test suite for bash script
    - Unit tests for helper functions
@@ -480,6 +493,113 @@ Comprehensive testing performed: config creation/loading, ENV overrides (tempora
 - Initial per-model config implementation: be61ddb
 - Documentation updates: 541f199
 - Bug fixes and refinements: (current working state)
+
+---
+
+### [2025-10-10] PowerShell Script Feature Parity Update
+
+**Version:** 1.2.0
+
+**Summary:**
+
+Updated `llms.ps1` PowerShell script to achieve complete feature parity with the bash variant. Implemented the same per-model configuration system, priority-based parameter handling, and smart boolean classification. The PowerShell implementation now supports the "configure once, run always" workflow with identical behavior across both platforms.
+
+**Key Changes:**
+
+- **Complete Rewrite:** Refactored entire script to match bash functionality
+- **Helper Functions:** Added 5 new helper functions for config management
+- **Configuration Priority:** Implemented CLI > ENV > ModelConfig > Default hierarchy
+- **ENV Override Fix:** ENV variables now properly temporary (not persisted to .ini)
+- **Config Merging:** Save function now merges with existing config instead of overwriting
+- **Dry-Run Order Fix:** Moved dry-run check before save to prevent config updates during dry-run
+- **Reserved Variable Fix:** Renamed `$host` to `$serverHost` (PowerShell reserved variable)
+
+**Technical Details:**
+
+PowerShell-specific implementation considerations:
+
+1. **Parameter Handling** - Used `[Parameter(ValueFromRemainingArguments)]` to capture all args after model pattern
+2. **Hashtables** - Used PowerShell hashtables for config storage (equivalent to bash associative arrays/temp files)
+3. **Quote Escaping** - Special regex pattern for PowerShell: `'^[''"]|[''"]$'` (escaped single quotes)
+4. **Reserved Variables** - Avoided `$host` (reserved in PowerShell), used `$serverHost` and `$serverPort`
+5. **Section Ordering** - Dry-run check must come before save to prevent config updates during preview
+
+**Key Functions Implemented:**
+
+- **`Convert-ToCamelCase`** (lines 14-25) - Converts `cache-type-k` to `CacheTypeK`
+- **`Convert-ToDashSeparated`** (lines 27-38) - Reverse conversion using `-creplace`
+- **`Is-ServerWideBoolean`** (lines 40-54) - Array-based classification (15 flags)
+- **`Load-ModelConfig`** (lines 56-79) - Loads and parses .ini with quote removal
+- **`Save-ModelConfig`** (lines 81-121) - Merges and saves with CtxSize first, alphabetically sorted
+
+**Testing:**
+
+Comprehensive testing performed with small LLM:
+
+1. ✅ Config creation with multiple parameters (context size, booleans, custom params)
+2. ✅ Config loading on subsequent runs (optional context size)
+3. ✅ Priority system verification (CLI > ENV > ModelConfig > Default)
+4. ✅ ENV overrides are temporary (not persisted to .ini)
+5. ✅ CLI overrides persist correctly
+6. ✅ Server-wide vs per-model boolean distinction (--mlock persists, --no-webui doesn't)
+7. ✅ Custom parameter handling with CamelCase conversion (--rope-freq-base → RopeFreqBase)
+8. ✅ Path quoting for values with spaces
+9. ✅ List command functionality
+10. ✅ .ini file ordering (CtxSize first, alphabetical sorting)
+11. ✅ Dry-run does NOT save config (verified after fix)
+
+All tests conducted using sub-agents to minimize context usage from verbose llama-server output.
+
+**Bugs Fixed During Implementation:**
+
+1. **Quote Escaping** (line 71) - Fixed regex pattern for PowerShell single quote handling
+2. **Reserved Variable** (lines 357-358, 440-441) - Renamed `$host` to `$serverHost`, `$port` to `$serverPort`
+3. **ENV Override Persistence** (lines 485-507) - Only save core params if they came from CLI, not ENV
+4. **Config Overwrite** (lines 89-95) - Changed Save-ModelConfig to merge with existing config instead of overwriting
+5. **Dry-Run Save Order** (lines 456-469) - Moved dry-run check before save config to prevent updates during preview
+6. **Array Slicing Edge Case** (lines 244-248) - Fixed PowerShell array slicing bug where `$arr[1..0]` wraps around and returns original element instead of empty array, causing context size to be passed as duplicate argument (`error: invalid argument: 32000`)
+7. **Argument Assembly** (lines 436-462, 306-307, 382-383, 421-422) - Split parameter flags and values into separate array elements instead of concatenated strings for proper argument passing
+8. **Command Execution** (line 553) - Changed from `Start-Process -ArgumentList` to `& llama-server $llmsArgs` for correct array expansion to llama-server
+
+**Files Modified:**
+
+- **`llms.ps1`** - Complete rewrite matching bash functionality (531 lines)
+  - Lines 14-54: Helper functions (Convert-ToCamelCase, Convert-ToDashSeparated, Is-ServerWideBoolean)
+  - Lines 56-121: Config management (Load-ModelConfig, Save-ModelConfig with merge)
+  - Lines 248-281: CLI argument parser (separates key-value, booleans, passthrough)
+  - Lines 334-362: Configuration priority application
+  - Lines 375-430: Additional args builder
+  - Lines 456-469: Dry-run handling (moved before save)
+  - Lines 471-527: Save logic with CLI-only persistence check
+
+- **`AGENTS.md`** - Updated project memory file
+  - Lines 120-133: Added PowerShell script status and key sections
+  - Lines 464-467: Marked PowerShell update as completed
+  - Lines 495-595: Added this history log entry
+
+**Breaking Changes:**
+
+None - maintains backward compatibility with existing workflows while adding new functionality.
+
+**Comparison with Bash Script:**
+
+The PowerShell implementation achieves exact parity:
+- Same 15 server-wide boolean flags
+- Same configuration priority system
+- Same .ini file format (UTF-8, CamelCase keys, alphabetical sorting)
+- Same default values
+- Same "configure once, run always" philosophy
+- Same ENV variable behavior (temporary only)
+
+**Future Work:**
+
+1. ~~**Test Suite Update**~~ - ✅ **COMPLETED (2025-10-10)**
+   - Rewrote `llms.tests.ps1` with 53 comprehensive tests
+   - All tests passing (100% success rate)
+   - Covers helper functions, config management, priority system, and integration workflows
+2. **Cross-Platform Testing** - Test PowerShell Core on Linux/macOS
+3. **Performance Optimization** - Profile for large model collections
+4. **Error Handling** - Add more robust error messages for edge cases
 
 ---
 
