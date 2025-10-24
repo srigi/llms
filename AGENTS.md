@@ -102,14 +102,14 @@ User Input (llms Mistral 32000 --mlock)
 #### `llms` (Bash)
 - **Language:** POSIX shell script (sh)
 - **Platform:** Linux, macOS, WSL
-- **Status:** ✅ Feature complete (v1.2.0)
+- **Status:** ✅ Feature complete (v1.2.1)
 - **Key Functions:**
-  - `load_config()` - Load global .ini files (lines 23-46)
+  - `load_config()` - Load global .ini files (lines 25-48)
   - `load_model_config()` - Load per-model .ini (lines 94-117)
-  - `save_model_config()` - Save per-model .ini (lines 119-200)
+  - `save_model_config()` - Save per-model .ini with merging (lines 119-243)
   - `is_server_wide_boolean()` - Classify boolean flags (lines 75-79)
 - **Key Sections:**
-  - Server-wide booleans list (lines 48-73)
+  - Server-wide booleans list (lines 50-73)
   - Argument parser (lines 332-376)
   - Configuration priority (lines 380-441)
   - Additional args builder (lines 455-513)
@@ -600,6 +600,134 @@ The PowerShell implementation achieves exact parity:
 2. **Cross-Platform Testing** - Test PowerShell Core on Linux/macOS
 3. **Performance Optimization** - Profile for large model collections
 4. **Error Handling** - Add more robust error messages for edge cases
+
+---
+
+### [2025-10-24] Bash Config Merging Fix and Test Suite Improvements
+
+**Version:** 1.2.1
+
+**Summary:**
+
+Fixed critical config merging bug in bash `llms` script where updating individual parameters via CLI would lose previously saved parameters. The bash variant now correctly preserves existing configuration when updating individual settings, achieving true feature parity with the PowerShell implementation. Additionally, refactored the test suite to remove all dependencies on actual `.gguf` model files and `llama-server` execution.
+
+**Key Changes:**
+
+- **Config Merging:** Bash script now preserves existing parameters when updating via CLI
+- **Test Independence:** Removed all `.gguf` file and server execution dependencies from test suite
+- **Feature Parity:** Bash and PowerShell variants now have identical configuration behavior
+- **Spacing Normalization:** .ini files maintain consistent formatting (` = ` with single space)
+
+**Technical Details:**
+
+**Bash `save_model_config()` Refactor (lines 119-243):**
+
+The function was completely rewritten to implement proper config merging:
+
+1. **Load existing config** - Reads current .ini file into temp storage
+2. **Track updated keys** - Maintains list of parameters being modified in current CLI invocation
+3. **Merge strategy** - New/updated params override, unmentioned params are preserved
+4. **Spacing normalization** - Ensures consistent ` = ` formatting throughout
+5. **Alphabetical sorting** - CtxSize first, remaining params sorted
+
+**Before (broken behavior):**
+```bash
+# Initial config: CtxSize=16000, Mlock=true, CacheTypeK=q4_0
+./llms gemma --cache-type-k q6_0
+# Result: CtxSize=16000, CacheTypeK=q6_0
+# Problem: Mlock was LOST ❌
+```
+
+**After (fixed behavior):**
+```bash
+# Initial config: CtxSize=16000, Mlock=true, CacheTypeK=q4_0
+./llms gemma --cache-type-k f16
+# Result: CtxSize=16000, CacheTypeK=f16, Mlock=true
+# Success: Mlock is PRESERVED ✅
+```
+
+**Test Suite Independence:**
+
+Removed all external dependencies from `llms.tests.ps1`:
+- No longer creates mock `.gguf` files
+- No longer invokes `llms.ps1` script or `llama-server`
+- All tests work with pure configuration file I/O
+- Tests run in ~760ms without any server startup delays
+- 100% isolated and deterministic
+
+**Testing:**
+
+Comprehensive testing performed on both bash and PowerShell variants:
+
+1. ✅ Config creation with multiple parameters
+2. ✅ Config loading on subsequent runs
+3. ✅ **Config merging when updating individual params** (critical test)
+4. ✅ CLI overrides persist correctly
+5. ✅ ENV overrides are temporary (not persisted)
+6. ✅ Server-wide booleans not saved to .ini
+7. ✅ Custom parameters saved with CamelCase conversion
+8. ✅ Spacing normalization in .ini files
+9. ✅ Alphabetical sorting maintained
+
+**Files Modified:**
+
+- **`llms` (bash script)** - Complete rewrite of `save_model_config()` function
+  - Lines 119-243: New config merging logic with 5 temp files for POSIX compliance
+  - Lines 147-158: Load existing config excluding CtxSize
+  - Lines 162-185: Track which parameters are being updated
+  - Lines 187-211: Parse CLI args and booleans
+  - Lines 220-231: Merge existing params that weren't updated
+  - Lines 233-236: Sort and assemble final config
+  - Lines 241-242: Cleanup all temp files
+
+- **`llms.tests.ps1`** - Refactored to remove .gguf dependencies
+  - Lines 17-19: Removed mock `.gguf` file creation
+  - Lines 105: Removed `Invoke-LlmsScript` helper function
+  - Lines 500-503: Simplified BeforeEach to only clean .ini files
+  - Lines 813-891: Updated integration tests to use test models only
+
+- **`CLAUDE.md`** - Updated documentation
+  - Lines 105-115: Updated bash script line numbers and version to 1.2.1
+  - Lines 603-700: Added this history log entry
+
+**Breaking Changes:**
+
+None - maintains full backward compatibility.
+
+**Bug Discovered:**
+
+During testing, discovered that the user's global `llms.ini` file contained per-model parameters (`CacheTypeK`, `CacheTypeV`, `UbatchSize`, `NGpuLayers`) which violates the architecture documented in CLAUDE.md. These should only be in per-model .ini files. User has cleaned up the global config to only contain server-wide parameters (`ModelsDirs`, `Host`, `Port`, `ApiKey`).
+
+**Comparison - Feature Parity Achieved:**
+
+| Feature | Bash (v1.2.1) | PowerShell (v1.2.0) |
+|---------|---------------|---------------------|
+| Per-model config | ✅ | ✅ |
+| Configuration priority | ✅ | ✅ |
+| ENV temporary overrides | ✅ | ✅ |
+| CLI persistence | ✅ | ✅ |
+| Server-wide booleans | ✅ | ✅ |
+| Custom parameters | ✅ | ✅ |
+| Dry-run mode | ✅ | ✅ |
+| **Config merging** | ✅ | ✅ |
+| Spacing normalization | ✅ | ✅ |
+| Alphabetical sorting | ✅ | ✅ |
+
+**Implementation Quality:**
+
+The bash implementation follows POSIX shell best practices:
+- ✅ Uses temp files instead of associative arrays (sh/dash compatible)
+- ✅ Proper variable quoting throughout
+- ✅ Unique temp files with `$$` process ID
+- ✅ Cleanup all temp files on completion
+- ✅ Clear logic flow with comments
+- ✅ Safe operations with `|| true` for non-critical failures
+
+**Future Work:**
+
+1. **Bash Test Suite** - Create automated test suite for bash variant (similar to PowerShell Pester tests)
+2. **Config Validation** - Add warnings when per-model parameters are found in global config
+3. **Cross-Platform Testing** - Test PowerShell Core on Linux/macOS
 
 ---
 

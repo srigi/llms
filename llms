@@ -118,6 +118,7 @@ load_model_config() {
 
 save_model_config() {
 	# Save per-model configuration to .ini file next to the model
+	# Merges with existing config (preserves parameters not specified in current CLI)
 	# Only saves if: context size OR CLI args present (not just ENV overrides)
 	local model_file="$1"
 	local model_ini="${model_file%.gguf}.ini"
@@ -144,59 +145,101 @@ save_model_config() {
 	}
 
 	# Temporary files for building config
-	local temp_file="/tmp/llms_config.$$"
-	local params_file="/tmp/llms_params.$$"
-	> "$temp_file"
-	> "$params_file"
+	local existing_file="/tmp/llms_existing.$$"
+	local new_params_file="/tmp/llms_new_params.$$"
+	local merged_file="/tmp/llms_merged.$$"
+	> "$new_params_file"
 
-	# Always save CtxSize first
-	echo "CtxSize = $CTX_SIZE" >> "$temp_file"
+	# Load existing config into temporary file (excluding CtxSize which we'll add first)
+	if [ -f "$model_ini" ]; then
+		grep -v "^CtxSize = " "$model_ini" | grep -v "^$" | grep -v "^[;#]" > "$existing_file" 2>/dev/null || true
+	else
+		> "$existing_file"
+	fi
 
-	# Collect all parameters to save (only non-defaults)
-	# Known parameters - save if different from default
-	[ "$CACHE_TYPE_K" != "q8_0" ] && echo "CacheTypeK = $CACHE_TYPE_K" >> "$params_file"
-	[ "$CACHE_TYPE_V" != "q8_0" ] && echo "CacheTypeV = $CACHE_TYPE_V" >> "$params_file"
-	[ "$FLASH_ATTN" != "on" ] && echo "FlashAttn = $FLASH_ATTN" >> "$params_file"
-	[ "$N_GPU_LAYERS" != "99" ] && echo "NGpuLayers = $N_GPU_LAYERS" >> "$params_file"
-	[ "$UBATCH_SIZE" != "512" ] && echo "UbatchSize = $UBATCH_SIZE" >> "$params_file"
+	# Collect new/updated parameters from current CLI invocation
+	# Track which keys we're updating so we can merge properly
+	local updated_keys_file="/tmp/llms_updated_keys.$$"
+	> "$updated_keys_file"
 
-	# Parse CLI args for unknown parameters
+	# Known parameters - add to new_params if provided via CLI
+	if [ -n "$CLI_CACHE_TYPE_K" ]; then
+		echo "CacheTypeK = $CACHE_TYPE_K" >> "$new_params_file"
+		echo "CacheTypeK" >> "$updated_keys_file"
+	fi
+	if [ -n "$CLI_CACHE_TYPE_V" ]; then
+		echo "CacheTypeV = $CACHE_TYPE_V" >> "$new_params_file"
+		echo "CacheTypeV" >> "$updated_keys_file"
+	fi
+	if [ -n "$CLI_FLASH_ATTN" ]; then
+		echo "FlashAttn = $FLASH_ATTN" >> "$new_params_file"
+		echo "FlashAttn" >> "$updated_keys_file"
+	fi
+	if [ -n "$CLI_N_GPU_LAYERS" ]; then
+		echo "NGpuLayers = $N_GPU_LAYERS" >> "$new_params_file"
+		echo "NGpuLayers" >> "$updated_keys_file"
+	fi
+	if [ -n "$CLI_UBATCH_SIZE" ]; then
+		echo "UbatchSize = $UBATCH_SIZE" >> "$new_params_file"
+		echo "UbatchSize" >> "$updated_keys_file"
+	fi
+
+	# Parse CLI args for custom parameters
 	echo "$CLI_ARGS_PARSED" | while IFS='=' read -r key value; do
 		[ -z "$key" ] && continue
-		# Remove -- prefix
 		param_name="${key#--}"
-		# Convert to CamelCase
 		camel_key=$(to_camel_case "$param_name")
-		# Skip if it's a known parameter (already handled above)
+		# Skip known parameters (already handled above)
 		case "$camel_key" in
 			CacheTypeK|CacheTypeV|FlashAttn|NGpuLayers|UbatchSize) continue ;;
 		esac
-		# Save with quotes if value contains spaces
+		echo "$camel_key" >> "$updated_keys_file"
 		if echo "$value" | grep -q ' '; then
-			echo "$camel_key = '$value'" >> "$params_file"
+			echo "$camel_key = '$value'" >> "$new_params_file"
 		else
-			echo "$camel_key = $value" >> "$params_file"
+			echo "$camel_key = $value" >> "$new_params_file"
 		fi
 	done
 
 	# Parse CLI booleans
 	echo "$CLI_BOOLEANS_PARSED" | while read -r flag; do
 		[ -z "$flag" ] && continue
-		# Remove -- prefix
 		flag_name="${flag#--}"
-		# Convert to CamelCase
 		camel_key=$(to_camel_case "$flag_name")
-		echo "$camel_key = true" >> "$params_file"
+		echo "$camel_key" >> "$updated_keys_file"
+		echo "$camel_key = true" >> "$new_params_file"
 	done
 
-	# Sort and append parameters alphabetically (after CtxSize)
-	if [ -s "$params_file" ]; then
-		sort "$params_file" >> "$temp_file"
+	# Merge: Start with CtxSize
+	> "$merged_file"
+	echo "CtxSize = $CTX_SIZE" >> "$merged_file"
+
+	# Add new/updated parameters
+	cat "$new_params_file" >> "$merged_file"
+
+	# Add existing parameters that weren't updated
+	if [ -s "$existing_file" ]; then
+		while IFS='=' read -r key value; do
+			key_trimmed=$(echo "$key" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+			value_trimmed=$(echo "$value" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+			# Check if this key was updated in current CLI
+			if ! grep -q "^${key_trimmed}$" "$updated_keys_file" 2>/dev/null; then
+				# Preserve existing parameter with normalized spacing
+				echo "$key_trimmed = $value_trimmed" >> "$merged_file"
+			fi
+		done < "$existing_file"
 	fi
 
-	# Clean up and move to final location
-	rm -f "$params_file"
-	mv "$temp_file" "$model_ini"
+	# Sort all parameters except CtxSize (which is first)
+	local final_file="/tmp/llms_final.$$"
+	head -n 1 "$merged_file" > "$final_file"  # CtxSize first
+	tail -n +2 "$merged_file" | sort >> "$final_file"  # Rest sorted
+
+	# Move to final location
+	mv "$final_file" "$model_ini"
+
+	# Clean up temp files
+	rm -f "$existing_file" "$new_params_file" "$merged_file" "$updated_keys_file"
 }
 
 # Load configuration from user config first, then override with local script directory
