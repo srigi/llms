@@ -123,7 +123,7 @@ function Save-ModelConfig {
 function Show-Help {
     $ScriptName = [System.IO.Path]::GetFileNameWithoutExtension($PSCommandPath)
 
-    Write-Output "version 1.2"
+    Write-Output "version 1.3"
     Write-Output ""
     Write-Output "usage:"
     Write-Output "  $ScriptName list"
@@ -317,7 +317,7 @@ if ($mmprojFiles -and $mmprojFiles.Count -gt 0) {
 }
 
 # ============================================================================
-# CONFIGURATION PRIORITY: CLI > ENV > ModelConfig > Default
+# CONFIGURATION PRIORITY: CLI > ModelConfig > Default
 # ============================================================================
 
 $DEFAULT_CACHE_TYPE_K = "q8_0"
@@ -337,25 +337,21 @@ function Get-CliArgValue {
 
 # CacheTypeK
 $cacheTypeK = Get-CliArgValue '--cache-type-k'
-if (-not $cacheTypeK) { $cacheTypeK = $Env:LLMS_CACHE_TYPE_K }
 if (-not $cacheTypeK) { $cacheTypeK = $ModelConfig['CacheTypeK'] }
 if (-not $cacheTypeK) { $cacheTypeK = $DEFAULT_CACHE_TYPE_K }
 
 # CacheTypeV
 $cacheTypeV = Get-CliArgValue '--cache-type-v'
-if (-not $cacheTypeV) { $cacheTypeV = $Env:LLMS_CACHE_TYPE_V }
 if (-not $cacheTypeV) { $cacheTypeV = $ModelConfig['CacheTypeV'] }
 if (-not $cacheTypeV) { $cacheTypeV = $DEFAULT_CACHE_TYPE_V }
 
 # NGpuLayers
 $nGpuLayers = Get-CliArgValue '--n-gpu-layers'
-if (-not $nGpuLayers) { $nGpuLayers = $Env:LLMS_N_GPU_LAYERS }
 if (-not $nGpuLayers) { $nGpuLayers = $ModelConfig['NGpuLayers'] }
 if (-not $nGpuLayers) { $nGpuLayers = $DEFAULT_N_GPU_LAYERS }
 
 # FlashAttn
 $flashAttn = Get-CliArgValue '--flash-attn'
-if (-not $flashAttn) { $flashAttn = $Env:LLMS_FLASH_ATTN }
 if (-not $flashAttn) { $flashAttn = $ModelConfig['FlashAttn'] }
 
 # Server-wide parameters (ENV > config > default)
