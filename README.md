@@ -1,4 +1,4 @@
-# LLMS Wrapper Scripts
+# llms · llama-server run helper
 
 Cross-platform wrapper scripts for [`llama-server`](https://github.com/ggml-org/llama.cpp/releases) that simplify running `.gguf` models, with intelligent configuration management through environment variables, per-model and global configuration files.
 
@@ -8,11 +8,11 @@ Cross-platform wrapper scripts for [`llama-server`](https://github.com/ggml-org/
 
 ## Prerequisites
 
-This project requires `llama-server` to be installed and available in your system PATH. LLMS is a wrapper that simplifies invoking `llama-server` - it does not install or bundle the binary.
+This project requires `llama-server` to be installed and available in your system's `$PATH`. LLMS is a wrapper that simplifies invoking `llama-server` - it does not install or bundle the binary.
 
 **Download llama-server:** [llama.cpp releases](https://github.com/ggml-org/llama.cpp/releases)
 
-Ensure `llama-server` runs correctly on your system before using these scripts.
+Ensure `llama-server` runs correctly on your system before using the script.
 
 ## Project Intent
 

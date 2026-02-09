@@ -322,9 +322,7 @@ if ($mmprojFiles -and $mmprojFiles.Count -gt 0) {
 
 $DEFAULT_CACHE_TYPE_K = "q8_0"
 $DEFAULT_CACHE_TYPE_V = "q8_0"
-$DEFAULT_UBATCH_SIZE = "512"
 $DEFAULT_N_GPU_LAYERS = "99"
-$DEFAULT_FLASH_ATTN = "on"
 $DEFAULT_HOST = "127.0.0.1"
 $DEFAULT_PORT = "8080"
 $DEFAULT_API_KEY = "secret"
@@ -349,12 +347,6 @@ if (-not $cacheTypeV) { $cacheTypeV = $Env:LLMS_CACHE_TYPE_V }
 if (-not $cacheTypeV) { $cacheTypeV = $ModelConfig['CacheTypeV'] }
 if (-not $cacheTypeV) { $cacheTypeV = $DEFAULT_CACHE_TYPE_V }
 
-# UbatchSize
-$ubatchSize = Get-CliArgValue '--ubatch-size'
-if (-not $ubatchSize) { $ubatchSize = $Env:LLMS_UBATCH_SIZE }
-if (-not $ubatchSize) { $ubatchSize = $ModelConfig['UbatchSize'] }
-if (-not $ubatchSize) { $ubatchSize = $DEFAULT_UBATCH_SIZE }
-
 # NGpuLayers
 $nGpuLayers = Get-CliArgValue '--n-gpu-layers'
 if (-not $nGpuLayers) { $nGpuLayers = $Env:LLMS_N_GPU_LAYERS }
@@ -365,7 +357,6 @@ if (-not $nGpuLayers) { $nGpuLayers = $DEFAULT_N_GPU_LAYERS }
 $flashAttn = Get-CliArgValue '--flash-attn'
 if (-not $flashAttn) { $flashAttn = $Env:LLMS_FLASH_ATTN }
 if (-not $flashAttn) { $flashAttn = $ModelConfig['FlashAttn'] }
-if (-not $flashAttn) { $flashAttn = $DEFAULT_FLASH_ATTN }
 
 # Server-wide parameters (ENV > config > default)
 $serverHost = if ($Env:LLMS_HOST) { $Env:LLMS_HOST } elseif (($config | Where-Object Key -eq 'Host').Value) { ($config | Where-Object Key -eq 'Host').Value } else { $DEFAULT_HOST }
@@ -381,7 +372,7 @@ $threads = [Environment]::ProcessorCount
 $additionalArgs = @()
 
 # Add CLI args (custom parameters - skip core ones)
-$coreParams = @('--cache-type-k', '--cache-type-v', '--ubatch-size', '--n-gpu-layers', '--flash-attn')
+$coreParams = @('--cache-type-k', '--cache-type-v', '--n-gpu-layers', '--flash-attn')
 foreach ($arg in $cliArgs) {
     if ($arg.key -notin $coreParams) {
         $additionalArgs += $arg.key
@@ -395,7 +386,7 @@ foreach ($flag in $cliBooleans) {
 }
 
 # Add args from model config (if not in CLI)
-$coreConfigKeys = @('CtxSize', 'CacheTypeK', 'CacheTypeV', 'UbatchSize', 'NGpuLayers', 'FlashAttn')
+$coreConfigKeys = @('CtxSize', 'CacheTypeK', 'CacheTypeV', 'NGpuLayers', 'FlashAttn')
 foreach ($key in $ModelConfig.Keys) {
     if ($key -in $coreConfigKeys) {
         continue
@@ -433,33 +424,25 @@ foreach ($key in $ModelConfig.Keys) {
 # ASSEMBLE COMMAND
 # ============================================================================
 
-$llmsArgs = @(
-    $passthroughArgs
-    $additionalArgs
-    $mmprojArgs
-    "--model"
-    $modelFile.FullName
-    "--ctx-size"
-    $ctxSize
-    "--cache-type-k"
-    $cacheTypeK
-    "--cache-type-v"
-    $cacheTypeV
-    "--ubatch-size"
-    $ubatchSize
-    "--n-gpu-layers"
-    $nGpuLayers
-    "--flash-attn"
-    $flashAttn
-    "--threads"
-    $threads
-    "--host"
-    $serverHost
-    "--port"
-    $serverPort
-    "--api-key"
-    $apiKey
-) | Where-Object { $_ -ne $null -and $_ -ne '' }
+$llmsArgsList = [System.Collections.Generic.List[string]]::new()
+if ($passthroughArgs) { $llmsArgsList.AddRange([string[]]$passthroughArgs) }
+if ($additionalArgs) { $llmsArgsList.AddRange([string[]]$additionalArgs) }
+if ($mmprojArgs) { $llmsArgsList.AddRange([string[]]$mmprojArgs) }
+
+$llmsArgsList.Add("--model")
+$llmsArgsList.Add($modelFile.FullName)
+
+if ($ctxSize) { $llmsArgsList.Add("--ctx-size"); $llmsArgsList.Add($ctxSize) }
+if ($cacheTypeK) { $llmsArgsList.Add("--cache-type-k"); $llmsArgsList.Add($cacheTypeK) }
+if ($cacheTypeV) { $llmsArgsList.Add("--cache-type-v"); $llmsArgsList.Add($cacheTypeV) }
+if ($nGpuLayers) { $llmsArgsList.Add("--n-gpu-layers"); $llmsArgsList.Add($nGpuLayers) }
+if ($flashAttn) { $llmsArgsList.Add("--flash-attn"); $llmsArgsList.Add($flashAttn) }
+if ($threads) { $llmsArgsList.Add("--threads"); $llmsArgsList.Add($threads) }
+if ($serverHost) { $llmsArgsList.Add("--host"); $llmsArgsList.Add($serverHost) }
+if ($serverPort) { $llmsArgsList.Add("--port"); $llmsArgsList.Add($serverPort) }
+if ($apiKey) { $llmsArgsList.Add("--api-key"); $llmsArgsList.Add($apiKey) }
+
+$llmsArgs = $llmsArgsList.ToArray()
 
 # Build command string for dry-run display (with proper quoting)
 $commandParts = @("llama-server")
@@ -512,18 +495,13 @@ if ($shouldSave) {
         $configParams['CacheTypeV'] = $cacheTypeV
     }
 
-    $cliUbatchSize = Get-CliArgValue '--ubatch-size'
-    if ($cliUbatchSize -and $ubatchSize -ne $DEFAULT_UBATCH_SIZE) {
-        $configParams['UbatchSize'] = $ubatchSize
-    }
-
     $cliNGpuLayers = Get-CliArgValue '--n-gpu-layers'
     if ($cliNGpuLayers -and $nGpuLayers -ne $DEFAULT_N_GPU_LAYERS) {
         $configParams['NGpuLayers'] = $nGpuLayers
     }
 
     $cliFlashAttn = Get-CliArgValue '--flash-attn'
-    if ($cliFlashAttn -and $flashAttn -ne $DEFAULT_FLASH_ATTN) {
+    if ($cliFlashAttn) {
         $configParams['FlashAttn'] = $flashAttn
     }
 
@@ -531,7 +509,7 @@ if ($shouldSave) {
     foreach ($arg in $cliArgs) {
         $paramName = $arg.key -replace '^--', ''
         $camelKey = Convert-ToCamelCase $paramName
-        if ($camelKey -notin @('CacheTypeK', 'CacheTypeV', 'UbatchSize', 'NGpuLayers', 'FlashAttn')) {
+        if ($camelKey -notin @('CacheTypeK', 'CacheTypeV', 'NGpuLayers', 'FlashAttn')) {
             $configParams[$camelKey] = $arg.value
         }
     }
