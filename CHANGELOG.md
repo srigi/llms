@@ -6,6 +6,22 @@ This file tracks the history of changes made by AI agents to the LLMS project.
 
 ## History Log
 
+### [2026-02-09] New Default for HTTP Threads
+
+**Version:** 1.3.2
+
+**Summary:**
+
+Introduced a new default for `--threads-http` to improve server performance under concurrent load. The parameter is now enforced as a core setting with persistence in model-specific configurations.
+
+**Key Changes:**
+
+- **New Default:** Set default `HttpThreads` to `8` in both PowerShell and Bash scripts.
+- **Core Parameter Integration:** Integrated `--threads-http` (PowerShell: `HttpThreads`) into the core configuration hierarchy (CLI > Model Config > Default).
+- **Persistence:** Added logic to save `HttpThreads` to model-specific `.ini` files if specified via CLI and differing from the default.
+
+---
+
 ### [2026-02-09] Multi-Modal Companion Detection Fix
 
 **Version:** 1.3.1

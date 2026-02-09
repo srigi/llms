@@ -348,6 +348,7 @@ if ($bestMmproj) {
 $DEFAULT_CACHE_TYPE_K = "q8_0"
 $DEFAULT_CACHE_TYPE_V = "q8_0"
 $DEFAULT_N_GPU_LAYERS = "99"
+$DEFAULT_HTTP_THREADS = "8"
 $DEFAULT_HOST = "127.0.0.1"
 $DEFAULT_PORT = "8080"
 $DEFAULT_API_KEY = "secret"
@@ -375,6 +376,11 @@ $nGpuLayers = Get-CliArgValue '--n-gpu-layers'
 if (-not $nGpuLayers) { $nGpuLayers = $ModelConfig['NGpuLayers'] }
 if (-not $nGpuLayers) { $nGpuLayers = $DEFAULT_N_GPU_LAYERS }
 
+# HttpThreads
+$httpThreads = Get-CliArgValue '--threads-http'
+if (-not $httpThreads) { $httpThreads = $ModelConfig['HttpThreads'] }
+if (-not $httpThreads) { $httpThreads = $DEFAULT_HTTP_THREADS }
+
 # FlashAttn
 $flashAttn = Get-CliArgValue '--flash-attn'
 if (-not $flashAttn) { $flashAttn = $ModelConfig['FlashAttn'] }
@@ -393,7 +399,7 @@ $threads = [Environment]::ProcessorCount
 $additionalArgs = @()
 
 # Add CLI args (custom parameters - skip core ones)
-$coreParams = @('--cache-type-k', '--cache-type-v', '--n-gpu-layers', '--flash-attn')
+$coreParams = @('--cache-type-k', '--cache-type-v', '--n-gpu-layers', '--threads-http', '--flash-attn')
 foreach ($arg in $cliArgs) {
     if ($arg.key -notin $coreParams) {
         $additionalArgs += $arg.key
@@ -407,7 +413,7 @@ foreach ($flag in $cliBooleans) {
 }
 
 # Add args from model config (if not in CLI)
-$coreConfigKeys = @('CtxSize', 'CacheTypeK', 'CacheTypeV', 'NGpuLayers', 'FlashAttn')
+$coreConfigKeys = @('CtxSize', 'CacheTypeK', 'CacheTypeV', 'NGpuLayers', 'HttpThreads', 'FlashAttn')
 foreach ($key in $ModelConfig.Keys) {
     if ($key -in $coreConfigKeys) {
         continue
@@ -457,6 +463,7 @@ if ($ctxSize) { $llmsArgsList.Add("--ctx-size"); $llmsArgsList.Add($ctxSize) }
 if ($cacheTypeK) { $llmsArgsList.Add("--cache-type-k"); $llmsArgsList.Add($cacheTypeK) }
 if ($cacheTypeV) { $llmsArgsList.Add("--cache-type-v"); $llmsArgsList.Add($cacheTypeV) }
 if ($nGpuLayers) { $llmsArgsList.Add("--n-gpu-layers"); $llmsArgsList.Add($nGpuLayers) }
+if ($httpThreads) { $llmsArgsList.Add("--threads-http"); $llmsArgsList.Add($httpThreads) }
 if ($flashAttn) { $llmsArgsList.Add("--flash-attn"); $llmsArgsList.Add($flashAttn) }
 if ($threads) { $llmsArgsList.Add("--threads"); $llmsArgsList.Add($threads) }
 if ($serverHost) { $llmsArgsList.Add("--host"); $llmsArgsList.Add($serverHost) }
@@ -521,6 +528,11 @@ if ($shouldSave) {
         $configParams['NGpuLayers'] = $nGpuLayers
     }
 
+    $cliHttpThreads = Get-CliArgValue '--threads-http'
+    if ($cliHttpThreads -and $httpThreads -ne $DEFAULT_HTTP_THREADS) {
+        $configParams['HttpThreads'] = $httpThreads
+    }
+
     $cliFlashAttn = Get-CliArgValue '--flash-attn'
     if ($cliFlashAttn) {
         $configParams['FlashAttn'] = $flashAttn
@@ -530,7 +542,7 @@ if ($shouldSave) {
     foreach ($arg in $cliArgs) {
         $paramName = $arg.key -replace '^--', ''
         $camelKey = Convert-ToCamelCase $paramName
-        if ($camelKey -notin @('CacheTypeK', 'CacheTypeV', 'NGpuLayers', 'FlashAttn')) {
+        if ($camelKey -notin @('CacheTypeK', 'CacheTypeV', 'NGpuLayers', 'HttpThreads', 'FlashAttn')) {
             $configParams[$camelKey] = $arg.value
         }
     }

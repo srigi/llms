@@ -179,6 +179,10 @@ save_model_config() {
 		echo "NGpuLayers = $N_GPU_LAYERS" >> "$new_params_file"
 		echo "NGpuLayers" >> "$updated_keys_file"
 	fi
+	if [ -n "$CLI_HTTP_THREADS" ]; then
+		echo "HttpThreads = $HTTP_THREADS" >> "$new_params_file"
+		echo "HttpThreads" >> "$updated_keys_file"
+	fi
 	if [ -n "$CLI_UBATCH_SIZE" ]; then
 		echo "UbatchSize = $UBATCH_SIZE" >> "$new_params_file"
 		echo "UbatchSize" >> "$updated_keys_file"
@@ -191,7 +195,7 @@ save_model_config() {
 		camel_key=$(to_camel_case "$param_name")
 		# Skip known parameters (already handled above)
 		case "$camel_key" in
-			CacheTypeK|CacheTypeV|FlashAttn|NGpuLayers|UbatchSize) continue ;;
+			CacheTypeK|CacheTypeV|FlashAttn|NGpuLayers|HttpThreads|UbatchSize) continue ;;
 		esac
 		echo "$camel_key" >> "$updated_keys_file"
 		if echo "$value" | grep -q ' '; then
@@ -489,6 +493,16 @@ else
 	N_GPU_LAYERS="99"
 fi
 
+# HttpThreads
+CLI_HTTP_THREADS=$(get_cli_arg_value "--threads-http")
+if [ -n "$CLI_HTTP_THREADS" ]; then
+	HTTP_THREADS="$CLI_HTTP_THREADS"
+elif [ -n "$MODEL_CONFIG_HTTP_THREADS" ]; then
+	HTTP_THREADS="$MODEL_CONFIG_HTTP_THREADS"
+else
+	HTTP_THREADS="8"
+fi
+
 # FlashAttn
 CLI_FLASH_ATTN=$(get_cli_arg_value "--flash-attn")
 if [ -n "$CLI_FLASH_ATTN" ]; then
@@ -522,7 +536,7 @@ echo "$CLI_ARGS_PARSED" | while IFS='=' read -r key value; do
 	param_name="${key#--}"
 	# Skip known parameters
 	case "$param_name" in
-		cache-type-k|cache-type-v|ubatch-size|n-gpu-layers|flash-attn) continue ;;
+		cache-type-k|cache-type-v|ubatch-size|n-gpu-layers|threads-http|flash-attn) continue ;;
 	esac
 	# Add to temp file
 	if echo "$value" | grep -q ' '; then
@@ -545,7 +559,7 @@ for var in $(env | grep '^MODEL_CONFIG_' | cut -d'=' -f1); do
 
 	# Skip known parameters (already handled)
 	case "$key" in
-		CTX_SIZE|CACHE_TYPE_K|CACHE_TYPE_V|UBATCH_SIZE|N_GPU_LAYERS|FLASH_ATTN) continue ;;
+		CTX_SIZE|CACHE_TYPE_K|CACHE_TYPE_V|UBATCH_SIZE|N_GPU_LAYERS|HTTP_THREADS|FLASH_ATTN) continue ;;
 	esac
 
 	# Convert SNAKE_CASE back to dash-separated
@@ -579,6 +593,7 @@ CMD="llama-server $LLAMA_SERVER_ARGS $ADDITIONAL_MODEL_ARGS $MMPROJ_ARGS \
 	--cache-type-v '$CACHE_TYPE_V' \
 	--ubatch-size '$UBATCH_SIZE' \
 	--n-gpu-layers '$N_GPU_LAYERS' \
+	--threads-http '$HTTP_THREADS' \
 	--flash-attn '$FLASH_ATTN' \
 	--threads '$THREADS' \
 	--host '$HOST' \
