@@ -123,7 +123,7 @@ function Save-ModelConfig {
 function Show-Help {
     $ScriptName = [System.IO.Path]::GetFileNameWithoutExtension($PSCommandPath)
 
-    Write-Output "version 1.3"
+    Write-Output "version 1.3.1"
     Write-Output ""
     Write-Output "usage:"
     Write-Output "  $ScriptName list"
@@ -185,7 +185,9 @@ if ($ModelPattern -eq "list") {
     $foundModels = $false
     foreach ($dir in $ModelsDirs) {
         Write-Host "`n  $dir`:"
-        $modelFiles = Get-ChildItem -Path $dir -Filter "*.gguf" -File -ErrorAction SilentlyContinue
+        # List all .gguf files but exclude mmproj companion files
+        $modelFiles = Get-ChildItem -Path $dir -Filter "*.gguf" -File -ErrorAction SilentlyContinue |
+                      Where-Object { $_.Name -notmatch '\.mmproj' }
         if ($modelFiles) {
             $foundModels = $true
             $modelFiles | ForEach-Object {
@@ -211,7 +213,10 @@ if ($ModelPattern -eq "list") {
 
 $modelFile = $null
 foreach ($dir in $ModelsDirs) {
-    $modelFile = Get-ChildItem -Path $dir -Filter "*$ModelPattern*.gguf" -File -ErrorAction SilentlyContinue | Select-Object -First 1
+    # Search for models matching pattern, excluding mmproj files
+    $modelFile = Get-ChildItem -Path $dir -Filter "*$ModelPattern*.gguf" -File -ErrorAction SilentlyContinue |
+                 Where-Object { $_.Name -notmatch '\.mmproj' } |
+                 Select-Object -First 1
     if ($modelFile) {
         break
     }
@@ -305,13 +310,33 @@ Write-Host " (context size: `e[38;5;226m$ctxSize`e[39m)"
 # ============================================================================
 
 $mmprojArgs = @()
-$mmprojFiles = Get-ChildItem -Path $modelFile.DirectoryName -Filter "$($modelFile.BaseName).mmproj-*.gguf" -File -ErrorAction SilentlyContinue
-if ($mmprojFiles -and $mmprojFiles.Count -gt 0) {
-    $mmprojFile = $mmprojFiles[0]
+$mmprojFiles = Get-ChildItem -Path $modelFile.DirectoryName -Filter "*.mmproj*.gguf" -File -ErrorAction SilentlyContinue
+
+# Find the best matching companion file
+# Strategy: The part of the companion filename before ".mmproj" must be a prefix of the main model filename.
+# If multiple files match, pick the one with the longest prefix (most specific match).
+
+$bestMmproj = $null
+$bestMatchLength = -1
+
+foreach ($file in $mmprojFiles) {
+    if ($file.Name -match '^(.*)\.mmproj') {
+        $prefix = $matches[1]
+        # Check if the model file name starts with this prefix
+        if ($modelFile.Name.StartsWith($prefix)) {
+            if ($prefix.Length -gt $bestMatchLength) {
+                $bestMatchLength = $prefix.Length
+                $bestMmproj = $file
+            }
+        }
+    }
+}
+
+if ($bestMmproj) {
     $mmprojArgs += "--mmproj"
-    $mmprojArgs += $mmprojFile.FullName
+    $mmprojArgs += $bestMmproj.FullName
     $mmprojArgs += "--no-mmproj-offload"
-    Write-Host "Adding companion model: `e[38;5;117m$($mmprojFile.FullName)`e[39m"
+    Write-Host "Adding companion model: `e[38;5;117m$($bestMmproj.FullName)`e[39m"
 } else {
     $mmprojArgs += "--no-mmproj"
 }

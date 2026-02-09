@@ -38,7 +38,16 @@ Cross-platform wrapper scripts for [`llama-server`](https://github.com/ggml-org/
 - **Dry Run**: Use `--dry-run` to preview the command without executing or saving config.
 
 ### Multi-Modal Support
-Companion `.mmproj-*.gguf` files are detected and loaded automatically.
+Companion `.mmproj` files (for multi-modal models) are detected and loaded automatically if they follow a specific naming convention.
+
+**Naming Convention:**
+The companion file must be named `{BaseName}.mmproj{Suffix}.gguf`, where `{BaseName}` is a prefix of the main model's filename.
+
+**Example:**
+- **Main Model:** `Qwen3-VL-30B-A3B-Thinking-UD-Q4.gguf`
+- **Companion:** `Qwen3-VL-30B-A3B-Thinking-UD.mmproj-F16.gguf`
+
+The script will automatically find the companion file because `Qwen3-VL-30B-A3B-Thinking-UD` is the start of the main model's name.
 
 ### Overriding Settings
 - **Persistent**: `llms Mistral --n-gpu-layers 30` (saves to `.ini`)
