@@ -16,6 +16,7 @@ Fixed issues with multi-modal companion model detection and main model selection
 
 **Key Changes:**
 
+- **Bash Parity:** Synchronized bash `llms` script with all version 1.3.x features and logic.
 - **Main Model Filtering:** Fixed bug where `mmproj` companion files were incorrectly identified as main models in `llms list` and model search.
 - **Prefix-Based Companion Matching:** Implemented a flexible matching strategy where companion files are selected based on the longest matching prefix with the main model filename.
 - **Documentation:** Updated `README.md` with clear naming convention instructions for companion files.
@@ -30,18 +31,18 @@ Fixed issues with multi-modal companion model detection and main model selection
 
 ---
 
-### [2026-02-09] Removal of Per-Model ENV Support (PowerShell)
+### [2026-02-09] Removal of Per-Model ENV Support
 
 **Version:** 1.3.0
 
 **Summary:**
 
-Simplified the configuration system for the PowerShell script by removing support for per-model environment variables. Model-specific settings are now managed exclusively through CLI arguments and per-model `.ini` files.
+Simplified the configuration system for both PowerShell and Bash scripts by removing support for per-model environment variables. Model-specific settings are now managed exclusively through CLI arguments and per-model `.ini` files.
 
 **Key Changes:**
 
 - **Simplified Priority Chain:** Per-model parameters now follow `CLI > ModelConfig > Default` priority.
-- **Removed ENV Processing:** `LLMS_CACHE_TYPE_K`, `LLMS_CACHE_TYPE_V`, `LLMS_N_GPU_LAYERS`, and `LLMS_FLASH_ATTN` are no longer processed by `llms.ps1`.
+- **Removed ENV Processing:** `LLMS_CACHE_TYPE_K`, `LLMS_CACHE_TYPE_V`, `LLMS_N_GPU_LAYERS`, and `LLMS_FLASH_ATTN` are no longer processed by `llms.ps1` or `llms`.
 - **Server-Wide Consistency:** Maintained ENV support for `LLMS_MODELS_DIRS`, `LLMS_HOST`, `LLMS_PORT`, and `LLMS_API_KEY`.
 
 **Testing:**

@@ -62,7 +62,7 @@ The script will automatically find the companion file because `Qwen3-VL-30B-A3B-
 | **Per-Model** | CLI Args > `.ini` File > Default Values |
 | **Server-Wide** | Environment Variables > `llms.ini` > Default Values |
 
-*Note: PowerShell version 1.3.0+ ignores per-model ENV variables (e.g., `LLMS_CTX_SIZE`) to favor explicit CLI/config settings.*
+*Note: Since version 1.3.0, both scripts ignore per-model ENV variables (e.g., `LLMS_CTX_SIZE`) to favor explicit CLI/config settings.*
 
 ### File Locations
 1. Script directory: `./llms.ini`

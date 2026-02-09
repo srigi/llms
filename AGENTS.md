@@ -19,8 +19,7 @@ LLMS is an intelligent wrapper around `llama-server` that simplifies running `.g
 
 ### Configuration Hierarchy
 1. **Per-Model Parameters** (performance, model-specific):
-   - **Priority (PS):** CLI args > `.ini` file > Defaults
-   - **Priority (Bash):** CLI args > ENV > `.ini` file > Defaults
+   - **Priority:** CLI args > `.ini` file > Defaults
    - **Storage:** `<model>.ini` next to `.gguf` file
    - **Examples:** `CtxSize`, `CacheTypeK`, `NGpuLayers`, `Mlock`
 
@@ -36,6 +35,9 @@ LLMS is an intelligent wrapper around `llama-server` that simplifies running `.g
 ---
 
 ## Code Conventions & Mandates
+
+### Shell Commands (Windows/PowerShell)
+- **Statement Separator:** Always use `;` instead of `&&` for chaining multiple commands. The default Windows PowerShell environment does not support `&&`.
 
 ### Naming Conventions
 - **.ini Keys:** CamelCase (e.g., `CtxSize`, `CacheTypeK`)
@@ -67,6 +69,6 @@ LLMS is an intelligent wrapper around `llama-server` that simplifies running `.g
 
 ## Notes for Future Agents
 - Values in per-model `.ini` files should only be non-default values (minimalism).
-- ENV variables for per-model settings are being phased out (removed in PS v1.3.0).
+- ENV variables for per-model settings have been removed (as of v1.3.0).
 - Always use `--dry-run` to verify command assembly before execution.
 - Maintain [CHANGELOG.md](CHANGELOG.md) for all project history.

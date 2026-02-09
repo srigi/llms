@@ -2,7 +2,7 @@
 
 show_help() {
 	SCRIPT_NAME=$(basename "$0")
-	echo "version 1.2"
+	echo "version 1.3.1"
 	echo ""
 	echo "usage:"
 	echo "  $SCRIPT_NAME list"
@@ -275,6 +275,9 @@ if [ "$1" = "list" ]; then
 			dir_has_models=false
 			for file in "$dir"/*.gguf; do
 				if [ -f "$file" ]; then
+					# Skip mmproj files
+					case "$file" in *.mmproj*) continue ;; esac
+
 					dir_has_models=true
 					echo "true" > "$temp_file"
 					size_bytes=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo "0")
@@ -314,6 +317,8 @@ echo "$MODELS_DIRS" | tr ',' '\n' | while read -r dir; do
 	[ -z "$dir" ] && continue
 	for file in "$dir"/*"$1"*.gguf; do
 		if [ -f "$file" ]; then
+			# Skip mmproj files
+			case "$file" in *.mmproj*) continue ;; esac
 			echo "$file"
 			exit 0
 		fi
@@ -353,15 +358,36 @@ printf " (context size: \033[38;5;226m%s\033[39m)\n" "$CTX_SIZE"
 
 # Check for mmproj files
 MODEL_DIR=$(dirname "$MODEL_FILE")
-MODEL_BASE=$(basename "$MODEL_FILE" .gguf)
-for mmproj_file in "$MODEL_DIR/$MODEL_BASE.mmproj-"*.gguf; do
-	if [ -f "$mmproj_file" ]; then
-		MMPROJ_ARGS="--mmproj '$mmproj_file' --no-mmproj-offload"
-		printf "Adding companion model: \033[38;5;117m%s\033[39m\n" "$mmproj_file"
-		break
-	fi
+MODEL_NAME=$(basename "$MODEL_FILE")
+BEST_MMPROJ=""
+BEST_MATCH_LENGTH=-1
+
+# Find the best matching companion file
+# Strategy: The part of the companion filename before ".mmproj" must be a prefix of the main model filename.
+# If multiple files match, pick the one with the longest prefix (most specific match).
+for file in "$MODEL_DIR"/*.mmproj*.gguf; do
+	[ -e "$file" ] || continue
+
+	filename=$(basename "$file")
+	# Get prefix before .mmproj
+	prefix="${filename%%.mmproj*}"
+	
+	# Check if the model file name starts with this prefix
+	# We use case for glob matching "prefix*" against MODEL_NAME
+	case "$MODEL_NAME" in
+		"$prefix"*)
+			if [ ${#prefix} -gt $BEST_MATCH_LENGTH ]; then
+				BEST_MATCH_LENGTH=${#prefix}
+				BEST_MMPROJ="$file"
+			fi
+			;;
+	esac
 done
-if [ -z "$MMPROJ_ARGS" ]; then
+
+if [ -n "$BEST_MMPROJ" ]; then
+	MMPROJ_ARGS="--mmproj '$BEST_MMPROJ' --no-mmproj-offload"
+	printf "Adding companion model: \033[38;5;117m%s\033[39m\n" "$BEST_MMPROJ"
+else
 	MMPROJ_ARGS="--no-mmproj"
 fi
 
@@ -427,8 +453,6 @@ LLAMA_SERVER_ARGS="$PASSTHROUGH_ARGS"
 CLI_CACHE_TYPE_K=$(get_cli_arg_value "--cache-type-k")
 if [ -n "$CLI_CACHE_TYPE_K" ]; then
 	CACHE_TYPE_K="$CLI_CACHE_TYPE_K"
-elif [ -n "$LLMS_CACHE_TYPE_K" ]; then
-	CACHE_TYPE_K="$LLMS_CACHE_TYPE_K"
 elif [ -n "$MODEL_CONFIG_CACHE_TYPE_K" ]; then
 	CACHE_TYPE_K="$MODEL_CONFIG_CACHE_TYPE_K"
 else
@@ -439,8 +463,6 @@ fi
 CLI_CACHE_TYPE_V=$(get_cli_arg_value "--cache-type-v")
 if [ -n "$CLI_CACHE_TYPE_V" ]; then
 	CACHE_TYPE_V="$CLI_CACHE_TYPE_V"
-elif [ -n "$LLMS_CACHE_TYPE_V" ]; then
-	CACHE_TYPE_V="$LLMS_CACHE_TYPE_V"
 elif [ -n "$MODEL_CONFIG_CACHE_TYPE_V" ]; then
 	CACHE_TYPE_V="$MODEL_CONFIG_CACHE_TYPE_V"
 else
@@ -451,8 +473,6 @@ fi
 CLI_UBATCH_SIZE=$(get_cli_arg_value "--ubatch-size")
 if [ -n "$CLI_UBATCH_SIZE" ]; then
 	UBATCH_SIZE="$CLI_UBATCH_SIZE"
-elif [ -n "$LLMS_UBATCH_SIZE" ]; then
-	UBATCH_SIZE="$LLMS_UBATCH_SIZE"
 elif [ -n "$MODEL_CONFIG_UBATCH_SIZE" ]; then
 	UBATCH_SIZE="$MODEL_CONFIG_UBATCH_SIZE"
 else
@@ -463,8 +483,6 @@ fi
 CLI_N_GPU_LAYERS=$(get_cli_arg_value "--n-gpu-layers")
 if [ -n "$CLI_N_GPU_LAYERS" ]; then
 	N_GPU_LAYERS="$CLI_N_GPU_LAYERS"
-elif [ -n "$LLMS_N_GPU_LAYERS" ]; then
-	N_GPU_LAYERS="$LLMS_N_GPU_LAYERS"
 elif [ -n "$MODEL_CONFIG_N_GPU_LAYERS" ]; then
 	N_GPU_LAYERS="$MODEL_CONFIG_N_GPU_LAYERS"
 else
@@ -475,8 +493,6 @@ fi
 CLI_FLASH_ATTN=$(get_cli_arg_value "--flash-attn")
 if [ -n "$CLI_FLASH_ATTN" ]; then
 	FLASH_ATTN="$CLI_FLASH_ATTN"
-elif [ -n "$LLMS_FLASH_ATTN" ]; then
-	FLASH_ATTN="$LLMS_FLASH_ATTN"
 elif [ -n "$MODEL_CONFIG_FLASH_ATTN" ]; then
 	FLASH_ATTN="$MODEL_CONFIG_FLASH_ATTN"
 else
