@@ -2,15 +2,18 @@
 
 show_help() {
 	SCRIPT_NAME=$(basename "$0")
+	echo "version 1.2"
+	echo ""
 	echo "usage:"
 	echo "  $SCRIPT_NAME list"
-	echo "  $SCRIPT_NAME <partial_model_name> <context_size> [llama-server args...] [--dry-run]"
+	echo "  $SCRIPT_NAME <partial_model_name> [<context_size>] [llama-server args...] [--dry-run]"
 	echo ""
 	echo "example:"
 	echo "  $SCRIPT_NAME list"
 	echo "  $SCRIPT_NAME Devstral-Small-2505-UD 24000"
 	echo "  $SCRIPT_NAME Mistral-Small-3.1-24B 32000 --jinja"
 	echo "  $SCRIPT_NAME Mistral-Small-3.1-24B 32000 --jinja --dry-run"
+	echo "  $SCRIPT_NAME Mistral-Small-3.1-24B  # uses saved config"
 	echo ""
 }
 
@@ -44,6 +47,201 @@ load_config() {
 	fi
 }
 
+# Server-wide boolean flags that should NOT be persisted in per-model .ini
+SERVER_WIDE_BOOLEANS="
+--help
+--usage
+--version
+--completion-bash
+--list-devices
+--log-disable
+--log-prefix
+--log-timestamps
+--verbose
+--log-verbose
+--offline
+--no-webui
+--reranking
+--rerank
+--metrics
+--props
+--slots
+--no-slots
+--dry-run
+-h
+-v
+"
+
+is_server_wide_boolean() {
+	local flag="$1"
+	echo "$SERVER_WIDE_BOOLEANS" | grep -q "^${flag}$"
+	return $?
+}
+
+get_cli_arg_value() {
+	# Get value for a CLI argument (e.g., --cache-type-k)
+	local key="$1"
+	echo "$CLI_ARGS_PARSED" | grep "^${key}=" | head -1 | cut -d'=' -f2-
+}
+
+has_cli_boolean() {
+	# Check if a CLI boolean flag was set
+	local flag="$1"
+	echo "$CLI_BOOLEANS_PARSED" | grep -q "^${flag}$"
+	return $?
+}
+
+load_model_config() {
+	# Load per-model configuration from .ini file next to the model
+	local model_file="$1"
+	local model_ini="${model_file%.gguf}.ini"
+
+	if [ -f "$model_ini" ]; then
+		while IFS='=' read -r key value; do
+			# Skip empty lines and comments
+			case "$key" in
+				''|'#'*|';'*) continue ;;
+				*)
+					# Remove whitespace
+					key=$(echo "$key" | tr -d ' \t')
+					value=$(echo "$value" | tr -d ' \t' | sed "s/^['\"]//;s/['\"]$//")  # Remove quotes
+					if [ -n "$key" ] && [ -n "$value" ]; then
+						# Export with MODEL_CONFIG_ prefix
+						snake_case_key=$(echo "$key" | sed 's/\([A-Z]\)/_\1/g' | tr '[:lower:]' '[:upper:]' | sed 's/^_//')
+						export "MODEL_CONFIG_${snake_case_key}"="$value"
+					fi
+					;;
+			esac
+		done < "$model_ini"
+	fi
+}
+
+save_model_config() {
+	# Save per-model configuration to .ini file next to the model
+	# Merges with existing config (preserves parameters not specified in current CLI)
+	# Only saves if: context size OR CLI args present (not just ENV overrides)
+	local model_file="$1"
+	local model_ini="${model_file%.gguf}.ini"
+
+	# Check if we should save (context size or CLI args present)
+	local should_save=false
+	if [ "$HAS_CLI_CTX_SIZE" = "true" ] || [ -n "$CLI_ARGS_PARSED" ] || [ -n "$CLI_BOOLEANS_PARSED" ]; then
+		should_save=true
+	fi
+
+	if [ "$should_save" = "false" ]; then
+		return
+	fi
+
+	# Convert dash-separated to CamelCase for .ini keys (POSIX-compliant)
+	to_camel_case() {
+		echo "$1" | awk -F'-' '{
+			result = ""
+			for (i = 1; i <= NF; i++) {
+				result = result toupper(substr($i, 1, 1)) substr($i, 2)
+			}
+			print result
+		}'
+	}
+
+	# Temporary files for building config
+	local existing_file="/tmp/llms_existing.$$"
+	local new_params_file="/tmp/llms_new_params.$$"
+	local merged_file="/tmp/llms_merged.$$"
+	> "$new_params_file"
+
+	# Load existing config into temporary file (excluding CtxSize which we'll add first)
+	if [ -f "$model_ini" ]; then
+		grep -v "^CtxSize = " "$model_ini" | grep -v "^$" | grep -v "^[;#]" > "$existing_file" 2>/dev/null || true
+	else
+		> "$existing_file"
+	fi
+
+	# Collect new/updated parameters from current CLI invocation
+	# Track which keys we're updating so we can merge properly
+	local updated_keys_file="/tmp/llms_updated_keys.$$"
+	> "$updated_keys_file"
+
+	# Known parameters - add to new_params if provided via CLI
+	if [ -n "$CLI_CACHE_TYPE_K" ]; then
+		echo "CacheTypeK = $CACHE_TYPE_K" >> "$new_params_file"
+		echo "CacheTypeK" >> "$updated_keys_file"
+	fi
+	if [ -n "$CLI_CACHE_TYPE_V" ]; then
+		echo "CacheTypeV = $CACHE_TYPE_V" >> "$new_params_file"
+		echo "CacheTypeV" >> "$updated_keys_file"
+	fi
+	if [ -n "$CLI_FLASH_ATTN" ]; then
+		echo "FlashAttn = $FLASH_ATTN" >> "$new_params_file"
+		echo "FlashAttn" >> "$updated_keys_file"
+	fi
+	if [ -n "$CLI_N_GPU_LAYERS" ]; then
+		echo "NGpuLayers = $N_GPU_LAYERS" >> "$new_params_file"
+		echo "NGpuLayers" >> "$updated_keys_file"
+	fi
+	if [ -n "$CLI_UBATCH_SIZE" ]; then
+		echo "UbatchSize = $UBATCH_SIZE" >> "$new_params_file"
+		echo "UbatchSize" >> "$updated_keys_file"
+	fi
+
+	# Parse CLI args for custom parameters
+	echo "$CLI_ARGS_PARSED" | while IFS='=' read -r key value; do
+		[ -z "$key" ] && continue
+		param_name="${key#--}"
+		camel_key=$(to_camel_case "$param_name")
+		# Skip known parameters (already handled above)
+		case "$camel_key" in
+			CacheTypeK|CacheTypeV|FlashAttn|NGpuLayers|UbatchSize) continue ;;
+		esac
+		echo "$camel_key" >> "$updated_keys_file"
+		if echo "$value" | grep -q ' '; then
+			echo "$camel_key = '$value'" >> "$new_params_file"
+		else
+			echo "$camel_key = $value" >> "$new_params_file"
+		fi
+	done
+
+	# Parse CLI booleans
+	echo "$CLI_BOOLEANS_PARSED" | while read -r flag; do
+		[ -z "$flag" ] && continue
+		flag_name="${flag#--}"
+		camel_key=$(to_camel_case "$flag_name")
+		echo "$camel_key" >> "$updated_keys_file"
+		echo "$camel_key = true" >> "$new_params_file"
+	done
+
+	# Merge: Start with CtxSize
+	> "$merged_file"
+	echo "CtxSize = $CTX_SIZE" >> "$merged_file"
+
+	# Add new/updated parameters
+	cat "$new_params_file" >> "$merged_file"
+
+	# Add existing parameters that weren't updated
+	if [ -s "$existing_file" ]; then
+		while IFS='=' read -r key value; do
+			key_trimmed=$(echo "$key" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+			value_trimmed=$(echo "$value" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+			# Check if this key was updated in current CLI
+			if ! grep -q "^${key_trimmed}$" "$updated_keys_file" 2>/dev/null; then
+				# Preserve existing parameter with normalized spacing
+				echo "$key_trimmed = $value_trimmed" >> "$merged_file"
+			fi
+		done < "$existing_file"
+	fi
+
+	# Sort all parameters except CtxSize (which is first)
+	local final_file="/tmp/llms_final.$$"
+	head -n 1 "$merged_file" > "$final_file"  # CtxSize first
+	tail -n +2 "$merged_file" | sort >> "$final_file"  # Rest sorted
+
+	# Move to final location
+	mv "$final_file" "$model_ini"
+
+	# Clean up temp files
+	rm -f "$existing_file" "$new_params_file" "$merged_file" "$updated_keys_file"
+}
+
 # Load configuration from user config first, then override with local script directory
 if [ -n "$XDG_CONFIG_HOME" ]; then
 	load_config "$XDG_CONFIG_HOME/llms.ini"
@@ -63,11 +261,11 @@ fi
 
 if [ "$1" = "list" ]; then
 	echo "Searching for .gguf models in:"
-	
+
 	# Use a temporary file to track if models were found
 	temp_file="/tmp/llms_found_models.$$"
 	echo "false" > "$temp_file"
-	
+
 	# Split MODELS_DIRS by comma and iterate
 	echo "$MODELS_DIRS" | tr ',' '\n' | while read -r dir; do
 		[ -z "$dir" ] && continue
@@ -96,11 +294,11 @@ if [ "$1" = "list" ]; then
 			echo "	Directory does not exist"
 		fi
 	done
-	
+
 	# Check if any models were found
 	found_models=$(cat "$temp_file")
 	rm -f "$temp_file"
-	
+
 	if [ "$found_models" = "false" ]; then
 		echo ""
 		echo "\033[91mError:\033[39m No models found in any configured directory!"
@@ -132,15 +330,25 @@ if [ -z "$MODEL_FILE" ]; then
 fi
 printf "Using model: \033[38;5;117m%s\033[39m" "$MODEL_FILE"
 
-# Set CTX_SIZE from cli arg
-if [ -z "$2" ]; then
+# Load per-model configuration
+load_model_config "$MODEL_FILE"
+
+# Set CTX_SIZE from cli arg or model config
+# Check if $2 is a number (context size) or something else (llama-server arg)
+if [ -n "$2" ] && [ "$2" -eq "$2" ] 2>/dev/null; then
+	# $2 is a number, treat it as context size
+	CTX_SIZE="$2"
+	HAS_CLI_CTX_SIZE=true
+elif [ -n "$MODEL_CONFIG_CTX_SIZE" ]; then
+	CTX_SIZE="$MODEL_CONFIG_CTX_SIZE"
+	HAS_CLI_CTX_SIZE=false
+else
 	echo ""
-	echo "\033[91mError:\033[39m You must specify a <context_size> parameter!"
+	echo "\033[91mError:\033[39m You must specify a <context_size> parameter or have a saved model configuration!"
 	echo ""
 	show_help
 	exit 1
 fi
-CTX_SIZE="$2"
 printf " (context size: \033[38;5;226m%s\033[39m)\n" "$CTX_SIZE"
 
 # Check for mmproj files
@@ -158,14 +366,124 @@ if [ -z "$MMPROJ_ARGS" ]; then
 fi
 
 # Parse additional arguments for llama-server
-shift 2  # Remove model pattern and ctx_size
-LLAMA_SERVER_ARGS="$*"
+if [ "$HAS_CLI_CTX_SIZE" = "true" ]; then
+	shift 2  # Remove model pattern and ctx_size
+else
+	shift 1  # Remove only model pattern
+fi
 
-# Get configuration values with defaults
-CACHE_TYPE_K=${LLMS_CACHE_TYPE_K:-"q8_0"}
-CACHE_TYPE_V=${LLMS_CACHE_TYPE_V:-"q8_0"}
-UBATCH_SIZE=${LLMS_UBATCH_SIZE:-"1024"}
-N_GPU_LAYERS=${LLMS_N_GPU_LAYERS:-"999"}
+# Parse CLI arguments into associative storage
+# This will extract both key-value pairs and per-model boolean flags
+CLI_ARGS_PARSED=""
+CLI_BOOLEANS_PARSED=""
+PASSTHROUGH_ARGS=""
+
+while [ $# -gt 0 ]; do
+	arg="$1"
+
+	if [ "${arg#--}" != "$arg" ]; then
+		# This is a flag starting with --
+		flag_name="${arg#--}"
+
+		# Check if next arg exists and is not a flag
+		if [ $# -gt 1 ] && [ "${2#--}" = "$2" ] && [ "${2#-}" = "$2" ]; then
+			# This is a key-value pair: --key value
+			key="$arg"
+			value="$2"
+			CLI_ARGS_PARSED="${CLI_ARGS_PARSED}${key}=${value}"$'\n'
+			shift 2
+		else
+			# This is a boolean flag: --flag
+			if is_server_wide_boolean "$arg"; then
+				# Server-wide boolean, add to passthrough
+				PASSTHROUGH_ARGS="${PASSTHROUGH_ARGS} ${arg}"
+			else
+				# Per-model boolean, store it
+				CLI_BOOLEANS_PARSED="${CLI_BOOLEANS_PARSED}${arg}"$'\n'
+			fi
+			shift 1
+		fi
+	elif [ "${arg#-}" != "$arg" ]; then
+		# Short flag like -h, -v
+		if is_server_wide_boolean "$arg"; then
+			PASSTHROUGH_ARGS="${PASSTHROUGH_ARGS} ${arg}"
+		else
+			CLI_BOOLEANS_PARSED="${CLI_BOOLEANS_PARSED}${arg}"$'\n'
+		fi
+		shift 1
+	else
+		# Unknown argument, pass through
+		PASSTHROUGH_ARGS="${PASSTHROUGH_ARGS} ${arg}"
+		shift 1
+	fi
+done
+
+LLAMA_SERVER_ARGS="$PASSTHROUGH_ARGS"
+
+# Get configuration values with priority: CLI args > ENV > model config > defaults
+# Per-model parameters
+
+# CacheTypeK
+CLI_CACHE_TYPE_K=$(get_cli_arg_value "--cache-type-k")
+if [ -n "$CLI_CACHE_TYPE_K" ]; then
+	CACHE_TYPE_K="$CLI_CACHE_TYPE_K"
+elif [ -n "$LLMS_CACHE_TYPE_K" ]; then
+	CACHE_TYPE_K="$LLMS_CACHE_TYPE_K"
+elif [ -n "$MODEL_CONFIG_CACHE_TYPE_K" ]; then
+	CACHE_TYPE_K="$MODEL_CONFIG_CACHE_TYPE_K"
+else
+	CACHE_TYPE_K="q8_0"
+fi
+
+# CacheTypeV
+CLI_CACHE_TYPE_V=$(get_cli_arg_value "--cache-type-v")
+if [ -n "$CLI_CACHE_TYPE_V" ]; then
+	CACHE_TYPE_V="$CLI_CACHE_TYPE_V"
+elif [ -n "$LLMS_CACHE_TYPE_V" ]; then
+	CACHE_TYPE_V="$LLMS_CACHE_TYPE_V"
+elif [ -n "$MODEL_CONFIG_CACHE_TYPE_V" ]; then
+	CACHE_TYPE_V="$MODEL_CONFIG_CACHE_TYPE_V"
+else
+	CACHE_TYPE_V="q8_0"
+fi
+
+# UbatchSize
+CLI_UBATCH_SIZE=$(get_cli_arg_value "--ubatch-size")
+if [ -n "$CLI_UBATCH_SIZE" ]; then
+	UBATCH_SIZE="$CLI_UBATCH_SIZE"
+elif [ -n "$LLMS_UBATCH_SIZE" ]; then
+	UBATCH_SIZE="$LLMS_UBATCH_SIZE"
+elif [ -n "$MODEL_CONFIG_UBATCH_SIZE" ]; then
+	UBATCH_SIZE="$MODEL_CONFIG_UBATCH_SIZE"
+else
+	UBATCH_SIZE="512"
+fi
+
+# NGpuLayers
+CLI_N_GPU_LAYERS=$(get_cli_arg_value "--n-gpu-layers")
+if [ -n "$CLI_N_GPU_LAYERS" ]; then
+	N_GPU_LAYERS="$CLI_N_GPU_LAYERS"
+elif [ -n "$LLMS_N_GPU_LAYERS" ]; then
+	N_GPU_LAYERS="$LLMS_N_GPU_LAYERS"
+elif [ -n "$MODEL_CONFIG_N_GPU_LAYERS" ]; then
+	N_GPU_LAYERS="$MODEL_CONFIG_N_GPU_LAYERS"
+else
+	N_GPU_LAYERS="99"
+fi
+
+# FlashAttn
+CLI_FLASH_ATTN=$(get_cli_arg_value "--flash-attn")
+if [ -n "$CLI_FLASH_ATTN" ]; then
+	FLASH_ATTN="$CLI_FLASH_ATTN"
+elif [ -n "$LLMS_FLASH_ATTN" ]; then
+	FLASH_ATTN="$LLMS_FLASH_ATTN"
+elif [ -n "$MODEL_CONFIG_FLASH_ATTN" ]; then
+	FLASH_ATTN="$MODEL_CONFIG_FLASH_ATTN"
+else
+	FLASH_ATTN="on"
+fi
+
+# General parameters (not stored in per-model config)
 HOST=${LLMS_HOST:-"127.0.0.1"}
 PORT=${LLMS_PORT:-"8080"}
 API_KEY=${LLMS_API_KEY:-"secret"}
@@ -177,32 +495,93 @@ else
 	THREADS=$(nproc 2>/dev/null || echo "4")
 fi
 
+# Build additional args from CLI and model config (unknown parameters and per-model booleans)
+# Use temp file to accumulate args (avoiding subshell issues)
+TEMP_ARGS_FILE="/tmp/llms_add_args.$$"
+> "$TEMP_ARGS_FILE"
+
+# Add CLI args (key-value pairs) that aren't known parameters
+echo "$CLI_ARGS_PARSED" | while IFS='=' read -r key value; do
+	[ -z "$key" ] && continue
+	param_name="${key#--}"
+	# Skip known parameters
+	case "$param_name" in
+		cache-type-k|cache-type-v|ubatch-size|n-gpu-layers|flash-attn) continue ;;
+	esac
+	# Add to temp file
+	if echo "$value" | grep -q ' '; then
+		echo "--${param_name} '${value}'" >> "$TEMP_ARGS_FILE"
+	else
+		echo "--${param_name} ${value}" >> "$TEMP_ARGS_FILE"
+	fi
+done
+
+# Add CLI booleans (per-model flags)
+echo "$CLI_BOOLEANS_PARSED" | while read -r flag; do
+	[ -z "$flag" ] && continue
+	echo "${flag}" >> "$TEMP_ARGS_FILE"
+done
+
+# Add args from model config (for params not provided via CLI)
+for var in $(env | grep '^MODEL_CONFIG_' | cut -d'=' -f1); do
+	key="${var#MODEL_CONFIG_}"
+	value="${!var}"
+
+	# Skip known parameters (already handled)
+	case "$key" in
+		CTX_SIZE|CACHE_TYPE_K|CACHE_TYPE_V|UBATCH_SIZE|N_GPU_LAYERS|FLASH_ATTN) continue ;;
+	esac
+
+	# Convert SNAKE_CASE back to dash-separated
+	flag_name=$(echo "$key" | tr '[:upper:]' '[:lower:]' | tr '_' '-')
+
+	# Skip if this parameter was provided via CLI
+	if echo "$CLI_ARGS_PARSED" | grep -q "^--${flag_name}="; then
+		continue
+	fi
+	if echo "$CLI_BOOLEANS_PARSED" | grep -q "^--${flag_name}$"; then
+		continue
+	fi
+
+	# Check if it's a boolean (value is "true")
+	if [ "$value" = "true" ]; then
+		echo "--${flag_name}" >> "$TEMP_ARGS_FILE"
+	else
+		echo "--${flag_name} '${value}'" >> "$TEMP_ARGS_FILE"
+	fi
+done
+
+# Read accumulated args from temp file
+ADDITIONAL_MODEL_ARGS=$(cat "$TEMP_ARGS_FILE" | tr '\n' ' ')
+rm -f "$TEMP_ARGS_FILE"
+
 # Assemble the complete command
-CMD="llama-server $LLAMA_SERVER_ARGS $MMPROJ_ARGS \
+CMD="llama-server $LLAMA_SERVER_ARGS $ADDITIONAL_MODEL_ARGS $MMPROJ_ARGS \
 	--model '$MODEL_FILE' \
 	--ctx-size '$CTX_SIZE' \
 	--cache-type-k '$CACHE_TYPE_K' \
 	--cache-type-v '$CACHE_TYPE_V' \
 	--ubatch-size '$UBATCH_SIZE' \
 	--n-gpu-layers '$N_GPU_LAYERS' \
-	--flash-attn \
+	--flash-attn '$FLASH_ATTN' \
 	--threads '$THREADS' \
 	--host '$HOST' \
 	--port '$PORT' \
 	--api-key '$API_KEY'"
 
 # Check for --dry-run
-case " $LLAMA_SERVER_ARGS " in
-	*" --dry-run "*)
-		# Remove --dry-run from display command
-		DISPLAY_CMD=$(echo "$CMD" | sed 's/ --dry-run//')
-		# Replace API key with asterisks
-		DISPLAY_CMD=$(echo "$DISPLAY_CMD" | sed "s/--api-key '[^']*'/--api-key '****'/")
-		# Format with line breaks
-		echo "Dry run: $(echo "$DISPLAY_CMD" | sed 's/ --/\n  --/g')"
-		exit 0
-		;;
-esac
+if echo " $LLAMA_SERVER_ARGS " | grep -q " --dry-run "; then
+	# Remove --dry-run from display command
+	DISPLAY_CMD=$(echo "$CMD" | sed 's/ --dry-run//')
+	# Replace API key with asterisks
+	DISPLAY_CMD=$(echo "$DISPLAY_CMD" | sed "s/--api-key '[^']*'/--api-key '****'/")
+	# Format with line breaks
+	echo "Dry run: $(echo "$DISPLAY_CMD" | sed 's/--/\n  --/g')"
+	exit 0
+fi
+
+# Save model configuration after determining all final values (not during dry-run)
+save_model_config "$MODEL_FILE"
 
 # Execute the command
 eval "$CMD"
