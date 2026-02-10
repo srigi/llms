@@ -1,7 +1,7 @@
 # LLMS Project - AI Agent Memory
 
 **Project:** LLMS - Cross-platform wrapper scripts for llama-server
-**Version:** 1.3.1
+**Version:** 1.3.3
 **Maintenance:** Update the [CHANGELOG.md](CHANGELOG.md) after each completed task.
 
 ---

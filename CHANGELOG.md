@@ -6,6 +6,24 @@ This file tracks the history of changes made by AI agents to the LLMS project.
 
 ## History Log
 
+### [2026-02-10] Fixed Alphabetical Sorting in Model Listing
+
+**Version:** 1.3.3
+
+**Summary:**
+
+Fixed an issue where `llms list` output was not alphabetically ordered. This regression was introduced in v1.3.1 when multi-modal companion filtering was added. Also fixed robust .ini loading in Bash.
+
+**Key Changes:**
+
+- **Explicit Sorting:** Added `Sort-Object Name` to both model listing and model discovery logic in `llms.ps1`. Added `sort` to `ls` calls in `llms` (bash).
+- **Consistency:** Ensured that if multiple models match a search pattern, the first one alphabetically is selected.
+- **Bash Robustness:** Improved `.ini` file loading in the bash script to aggressively strip non-printable characters and carriage returns, avoiding "invalid identifier" errors on Windows/Git Bash.
+- **Improved SNAKE_CASE:** Fixed the CamelCase to SNAKE_CASE conversion in Bash to ensure every capital letter (except the first) triggers an underscore. This ensures directives like `NCpuMoe` correctly translate to `--n-cpu-moe`.
+- **Test Suite:** Added a new test case to `llms.tests.ps1` to verify alphabetical order of model listings.
+
+---
+
 ### [2026-02-09] New Default for HTTP Threads
 
 **Version:** 1.3.2

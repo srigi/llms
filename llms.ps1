@@ -123,7 +123,7 @@ function Save-ModelConfig {
 function Show-Help {
     $ScriptName = [System.IO.Path]::GetFileNameWithoutExtension($PSCommandPath)
 
-    Write-Output "version 1.3.1"
+    Write-Output "version 1.3.3"
     Write-Output ""
     Write-Output "usage:"
     Write-Output "  $ScriptName list"
@@ -187,7 +187,8 @@ if ($ModelPattern -eq "list") {
         Write-Host "`n  $dir`:"
         # List all .gguf files but exclude mmproj companion files
         $modelFiles = Get-ChildItem -Path $dir -Filter "*.gguf" -File -ErrorAction SilentlyContinue |
-                      Where-Object { $_.Name -notmatch '\.mmproj' }
+                      Where-Object { $_.Name -notmatch '\.mmproj' } |
+                      Sort-Object Name
         if ($modelFiles) {
             $foundModels = $true
             $modelFiles | ForEach-Object {
@@ -216,6 +217,7 @@ foreach ($dir in $ModelsDirs) {
     # Search for models matching pattern, excluding mmproj files
     $modelFile = Get-ChildItem -Path $dir -Filter "*$ModelPattern*.gguf" -File -ErrorAction SilentlyContinue |
                  Where-Object { $_.Name -notmatch '\.mmproj' } |
+                 Sort-Object Name |
                  Select-Object -First 1
     if ($modelFile) {
         break

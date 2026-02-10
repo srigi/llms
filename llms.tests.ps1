@@ -211,6 +211,26 @@ Describe "llms.ps1" {
              $Env:LLMS_MODELS_DIRS = $null
              $Env:LLMS_PORT = $null
          }
+
+         It "Lists models in alphabetical order" {
+             $Env:LLMS_MODELS_DIRS = $ModelDir
+             
+             # Create more models in non-alphabetical order
+             "dummy" | Out-File -FilePath (Join-Path $ModelDir "Z-model.gguf") -Encoding UTF8
+             "dummy" | Out-File -FilePath (Join-Path $ModelDir "A-model.gguf") -Encoding UTF8
+             "dummy" | Out-File -FilePath (Join-Path $ModelDir "M-model.gguf") -Encoding UTF8
+             
+             $output = & powershell -ExecutionPolicy Bypass -File $ScriptPath list 2>&1 | Out-String
+             
+             # Check order: A should come before M, M before test-model (T), T before Z
+             # Using regex with dots to match across lines
+             $output | Should Match "(?s)A-model\.gguf.*M-model\.gguf.*test-model\.gguf.*Z-model\.gguf"
+             
+             $Env:LLMS_MODELS_DIRS = $null
+             Remove-Item (Join-Path $ModelDir "Z-model.gguf")
+             Remove-Item (Join-Path $ModelDir "A-model.gguf")
+             Remove-Item (Join-Path $ModelDir "M-model.gguf")
+         }
     }
 
     # Cleanup
